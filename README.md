@@ -84,7 +84,8 @@ inte listas laddas inte alls (`--strict-mcp-config`).
 |---|---|---|
 | GitHub | `github` | officiell, `api.githubcopilot.com/mcp` |
 | Slack | `slack` | [korotovsky/slack-mcp-server](https://github.com/korotovsky/slack-mcp-server) |
-| Gmail + Google Kalender | `google` | [taylorwilsdon/google_workspace_mcp](https://github.com/taylorwilsdon/google_workspace_mcp) |
+| Gmail + Kalender, privat | `google` | [taylorwilsdon/google_workspace_mcp](https://github.com/taylorwilsdon/google_workspace_mcp) |
+| Gmail + Kalender, jobb | `google-work` | samma, eget konto och egen token |
 
 ### GitHub → `GITHUB_PAT`
 github.com → Settings → Developer settings → Fine-grained tokens. Välj repon och
@@ -108,6 +109,9 @@ skriva, ge *Read and write* på det som behövs.
 3. *Credentials* → *Create OAuth client ID* → **Desktop app**. Kopiera id och secret.
 4. Kör `./mcp/google-login.sh` en gång och godkänn i webbläsaren. Token sparas i
    `data/google/` och förnyas automatiskt.
+5. Jobbkonto: sätt `GOOGLE_WORK_EMAIL` och kör `./mcp/google-login.sh work`.
+   Samma OAuth-klient fungerar; token sparas i `data/google-work/`. Kontots
+   Workspace-admin kan behöva godkänna appen.
 
 ## Bra att veta
 

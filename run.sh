@@ -28,7 +28,7 @@ done
 
 WORK="$DIR/work/$TASK"
 LOG="$DIR/logs/$TASK/$(date +%Y-%m-%d_%H%M%S).log"
-mkdir -p "$WORK" "${LOG:h}" "$DIR/data/slack" "$DIR/data/google"
+mkdir -p "$WORK" "${LOG:h}" "$DIR/data/slack" "$DIR/data/google" "$DIR/data/google-work"
 
 # Starta Docker Desktop om den inte är igång
 if ! docker info >/dev/null 2>&1; then
@@ -55,7 +55,9 @@ trap 'rm -rf "$LOCK"' EXIT
 
 echo "=== $TASK $(date) ===" >>"$LOG"
 set +e
-docker run --rm --env-file "$DIR/.env" -e MCP_TIMEOUT=60000 \
+# Samma tidszon som Macen, så att "idag" och klockslag stämmer
+TZ_NAME="$(readlink /etc/localtime | sed 's#.*/zoneinfo/##')"
+docker run --rm --env-file "$DIR/.env" -e MCP_TIMEOUT=60000 -e "TZ=${TZ_NAME:-UTC}" \
   -v "$WORK:/work" \
   -v "$DIR/mcp:/mcp:ro" \
   -v "$DIR/data:/data" \

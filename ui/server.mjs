@@ -72,8 +72,8 @@ async function listMcp() {
     name: s.name,
     levels: s.levels,
     missing: [...s.vars].filter(v => !isSet(v)),
-    // Google kräver en engångsinloggning som sparar en token i data/google
-    needsLogin: s.name === 'google' && !(await fs.readdir(path.join(DATA, 'google')).catch(() => [])).some(f => !f.startsWith('.')),
+    // Google kräver en engångsinloggning som sparar en token i data/<namn>
+    needsLogin: s.name.startsWith('google') && !(await fs.readdir(path.join(DATA, s.name)).catch(() => [])).some(f => !f.startsWith('.')),
   })));
 }
 

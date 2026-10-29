@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "google-work": {
+      "command": "workspace-mcp",
+      "args": [
+        "--single-user",
+        "--tools",
+        "gmail",
+        "calendar"
+      ],
+      "env": {
+        "GOOGLE_OAUTH_CLIENT_ID": "${GOOGLE_OAUTH_CLIENT_ID}",
+        "GOOGLE_OAUTH_CLIENT_SECRET": "${GOOGLE_OAUTH_CLIENT_SECRET}",
+        "USER_GOOGLE_EMAIL": "${GOOGLE_WORK_EMAIL}",
+        "WORKSPACE_MCP_CREDENTIALS_DIR": "/data/google-work",
+        "WORKSPACE_MCP_PORT": "8001"
+      }
+    }
+  }
+}
