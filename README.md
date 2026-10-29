@@ -63,6 +63,31 @@ Mobil/webb ──► Firebase (Hosting, Auth, Firestore i europe-north2) ◄─�
 npx firebase-tools deploy --only hosting,firestore   # efter ändringar i ui/public eller reglerna
 ```
 
+## Körning i molnet (Cloud Run)
+
+Uppgifterna körs i Google Cloud, så Macen behöver inte vara på:
+
+```
+Webbapp ──► Firestore (uppgifter, profil, resultat)
+   └──► la-api (Cloud Run) ──► Cloud Scheduler (ett schema per uppgift)
+                          └──► claude-task (Cloud Run Job) ◄── Secret Manager (tokens)
+```
+
+- `cloud/runner.mjs` kör en uppgift. Den hämtar uppgift, profil och filer
+  från Firestore, kör Claude med valda MCP-servrar och sparar resultatet.
+- `cloud/api.mjs` tar emot "Kör nu" och synkar scheman. Den godtar bara
+  ägarens Google-inloggning.
+- Allt ligger i `europe-north2` (Stockholm). Cloud Scheduler ligger i
+  `europe-west1`, eftersom tjänsten inte finns i Stockholm.
+- `.gcloudignore` hindrar att `.env`, `data/` och profilen laddas upp till Cloud Build.
+
+```bash
+./cloud/deploy.sh din@gmail.com   # installera/uppdatera; körs om efter nya tokens i .env
+```
+
+Gå tillbaka till att köra på Macen: `./install.sh && ./agent/install-agent.sh`
+(stäng då av scheman i Cloud Scheduler så att inget körs dubbelt).
+
 ## Skapa en uppgift
 
 Skapa `tasks/<namn>.md`:
@@ -100,6 +125,7 @@ mcp: slack, google, github:write
 ```
 
 Konfigurationerna finns i `mcp/<tjänst>.read.json` och `mcp/<tjänst>.write.json`.
+För Google betyder skrivläge *skriva i kalendern*; mejl är alltid bara läsbara.
 Tokens läses från `.env` via `${VAR}` och sparas aldrig i git. Tjänster som
 inte listas laddas inte alls (`--strict-mcp-config`).
 
@@ -109,6 +135,7 @@ inte listas laddas inte alls (`--strict-mcp-config`).
 | Slack | `slack` | [korotovsky/slack-mcp-server](https://github.com/korotovsky/slack-mcp-server) |
 | Gmail + Kalender, privat | `google` | [taylorwilsdon/google_workspace_mcp](https://github.com/taylorwilsdon/google_workspace_mcp) |
 | Gmail + Kalender, jobb | `google-work` | samma, eget konto och egen token |
+| Linear | `linear` | officiell, `mcp.linear.app` (läsläge: `/mcp/readonly`) |
 
 ### GitHub → `GITHUB_PAT`
 github.com → Settings → Developer settings → Fine-grained tokens. Välj repon och

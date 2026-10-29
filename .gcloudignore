@@ -1,0 +1,10 @@
+# Laddas aldrig upp till Cloud Build: hemligheter, inloggningar och personuppgifter
+.env
+data/
+logs/
+work/
+profile.json
+profile.md
+.git/
+**/node_modules/
+.firebase/

@@ -2,7 +2,12 @@
   "mcpServers": {
     "google": {
       "command": "workspace-mcp",
-      "args": ["--single-user", "--tools", "gmail", "calendar"],
+      "args": [
+        "--single-user",
+        "--permissions",
+        "gmail:readonly",
+        "calendar:full"
+      ],
       "env": {
         "GOOGLE_OAUTH_CLIENT_ID": "${GOOGLE_OAUTH_CLIENT_ID}",
         "GOOGLE_OAUTH_CLIENT_SECRET": "${GOOGLE_OAUTH_CLIENT_SECRET}",
