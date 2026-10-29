@@ -18,6 +18,10 @@ PROMPT="$(task_prompt "$FILE")"
 
 Uppgift:
 $PROMPT"
+# Åtgärder i rapporterna blir en checklista som går att bocka av i webbappen
+PROMPT="$PROMPT
+
+Format: Om du skriver en rapport till /work, skriv det som kräver svar eller åtgärd från mig som en checklista i markdown, en punkt per sak: \`- [ ] Vad som ska göras (vem det gäller, eventuell deadline)\`. Använd checklistan bara för sådant som faktiskt kräver en åtgärd."
 
 # mcp: github, slack:write  ->  /mcp/github.read.json /mcp/slack.write.json
 MCP_ARGS=()

@@ -138,6 +138,29 @@ if (window.CLOUD_MODE) {
     });
   }
 
+  // "- [ ] text" eller "1. [x] text": prefix, bock, avslut, text (samma som i ui/server.mjs)
+  const TODO_RE = /^(\s*(?:[-*+]|\d+[.)])\s+\[)[ xX](\]\s+)(.*)$/;
+  // Samma dokument-id som cloud/runner.mjs: <uppgift>__<base64url(sökväg)>
+  const b64url = s => btoa(String.fromCharCode(...new TextEncoder().encode(s)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+  // Bockar av eller i en punkt i en checklista. Bara raden ändras och längden
+  // är densamma, så runner.mjs laddar inte upp filen igen vid nästa körning.
+  async function toggleTodo(name, rel, { line, checked, text } = {}) {
+    if (!/\.(md|markdown)$/i.test(rel)) throw new Error('ogiltig sökväg');
+    const ref = F.doc(db, 'files', `${name}__${b64url(rel)}`);
+    await F.runTransaction(db, async tx => {
+      const content = (await tx.get(ref)).data()?.content;
+      if (typeof content !== 'string') throw new Error('filen finns inte');
+      const lines = content.split('\n');
+      const todo = Number.isInteger(line) ? TODO_RE.exec(lines[line] ?? '') : null;
+      if (!todo || todo[3] !== text) throw new Error('filen har ändrats, ladda om sidan');
+      lines[line] = todo[1] + (checked ? 'x' : ' ') + todo[2] + todo[3];
+      tx.update(ref, { content: lines.join('\n') });
+    });
+    return { line, checked: !!checked };
+  }
+
   async function cloudCall(method, url, body) {
     const u = new URL(url, location.origin);
     const parts = u.pathname.split('/').filter(Boolean).map(decodeURIComponent);
@@ -228,6 +251,7 @@ if (window.CLOUD_MODE) {
     }
 
     if (parts[2] === 'files') {
+      if (method === 'PATCH' && parts.length > 3) return toggleTodo(name, parts.slice(3).join('/'), body);
       await subscribe('files', name);
       const files = (store.files.get(name) || []).slice().sort((a, b) => a.path.localeCompare(b.path));
       if (parts.length === 3) return files.map(f => ({ path: f.path, size: f.size, modified: f.modified }));

@@ -38,6 +38,8 @@ async function readJson(req) {
 }
 
 const CLOUD_MSG = 'Uppgifterna hanteras i webbappen i molnet. Ändra dem där.';
+// "- [ ] text" eller "1. [x] text": prefix, bock, avslut, text
+const TODO_RE = /^(\s*(?:[-*+]|\d+[.)])\s+\[)[ xX](\]\s+)(.*)$/;
 
 async function saveTask(res, name, body, isNew) {
   if (await cloudManaged()) return fail(res, 409, CLOUD_MSG);
@@ -119,6 +121,21 @@ async function api(req, res, parts, url) {
         return send(res, 200, { id: parts[3], log });
       } catch { return fail(res, 404, 'körningen finns inte'); }
     }
+  }
+
+  // Bockar av eller i en punkt i en checklista ("- [ ] ...") i en markdown-fil
+  if (parts[2] === 'files' && m === 'PATCH' && parts.length > 3) {
+    const full = safeWorkPath(name, parts.slice(3).join('/'));
+    if (!full || !/\.(md|markdown)$/i.test(full)) return fail(res, 400, 'ogiltig sökväg');
+    const { line, checked, text } = await readJson(req);
+    let content;
+    try { content = await fs.readFile(full, 'utf8'); } catch { return fail(res, 404, 'filen finns inte'); }
+    const lines = content.split('\n');
+    const todo = Number.isInteger(line) ? TODO_RE.exec(lines[line] ?? '') : null;
+    if (!todo || todo[3] !== text) return fail(res, 409, 'filen har ändrats, ladda om sidan');
+    lines[line] = todo[1] + (checked ? 'x' : ' ') + todo[2] + todo[3];
+    await fs.writeFile(full, lines.join('\n'));
+    return send(res, 200, { line, checked: !!checked });
   }
 
   if (parts[2] === 'files' && m === 'GET') {

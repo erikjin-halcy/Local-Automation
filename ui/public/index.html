@@ -129,6 +129,26 @@
   .job .chips { display: flex; gap: 6px; flex-wrap: wrap; }
   .job .acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
   .job .acts .btn, .job .acts button { font-size: 13px; padding: 6px 12px; }
+  .plan { display: flex; flex-direction: column; gap: 14px; }
+  .planhead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .planhead .spacer { flex: 1; }
+  .planhead .more { font-size: 13px; }
+  .plan .summary { margin: 0; font: 16px/1.55 var(--serif); }
+  .plan .stale { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 12px; border-radius: 10px; background: var(--line-soft); font-size: 13px; }
+  .plangrid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 28px; }
+  .plangrid h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+  .plan .todocount { margin-bottom: 8px; }
+  .plan .md { font-size: 15px; }
+  .sched { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  .sched li { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 7px 10px; border-radius: 8px; border-left: 3px solid transparent; }
+  .sched .time { font: 12px var(--mono); color: var(--muted); white-space: nowrap; }
+  .sched .what { overflow-wrap: anywhere; }
+  .sched li.focus { background: var(--accent-soft); }
+  .sched li.focus .what { color: var(--accent-soft-text); }
+  .sched li.lunch .what { color: var(--muted); }
+  .sched li.past { opacity: .55; }
+  .sched li.now { border-left-color: var(--run); background: var(--run-soft); }
+  .sched li.next { border-left-color: var(--accent); }
   .table { padding: 0; overflow: hidden; }
   .table h2 { padding: 14px 20px; border-bottom: 1px solid var(--line); }
   .table .scroll { overflow-x: auto; }
@@ -178,6 +198,11 @@
   .md blockquote { margin: 0 0 10px; padding-left: 14px; border-left: 3px solid var(--line); color: var(--muted); }
   .md pre { margin: 0 0 10px; }
   .md code { font-size: 13px; }
+  .md li.todo { list-style: none; margin-left: -22px; }
+  .md li.todo label { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; padding: 2px 0; }
+  .md li.todo input { margin-top: 5px; flex: none; }
+  .md li.todo input:checked + span { text-decoration: line-through; color: var(--muted); }
+  .todocount { display: inline-block; font: 500 13px/1.5 var(--sans); padding: 4px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-soft-text); margin-bottom: 14px; }
 
   /* ---------- formulär ---------- */
   .form { padding: 22px 28px 40px; max-width: 840px; display: flex; flex-direction: column; gap: 16px; }
@@ -226,6 +251,9 @@
     .stat .v { font-size: 18px; }
     .stats .stat:nth-child(3) { grid-column: 1 / -1; }
     .tl-row { grid-template-columns: 96px 1fr; }
+    .plangrid { grid-template-columns: 1fr; gap: 20px; }
+    .sched li { grid-template-columns: 88px minmax(0, 1fr); }
+    .sched li .badge { grid-column: 2; justify-self: start; }
     .taskhead { padding: 14px 16px 0; gap: 10px; }
     .control { gap: 10px; }
     .control .sched { flex-basis: 100%; order: 3; font-size: 13px; }
@@ -235,6 +263,8 @@
     .split .list button { min-height: 48px; }
     .split .view { padding: 16px; width: 100%; }
     .md { font-size: 15px; }
+    .md li.todo label { min-height: 44px; padding: 8px 0; }
+    .md li.todo input { width: 20px; height: 20px; margin-top: 2px; }
     .form { padding: 16px; }
     .mcp { grid-template-columns: minmax(0, 1fr) max-content; }
     .mcp .warn { grid-column: 1 / -1; }
@@ -555,20 +585,29 @@ function schedText(t) {
 // ---------- markdown ----------
 
 // Enkel markdown för rapporterna. All text escapas innan formatering läggs på,
-// så innehållet i filerna kan aldrig bli HTML.
+// så innehållet i filerna kan aldrig bli HTML. Länkar måste vara http(s).
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const inline = s => esc(s)
+  .replace(/`([^`]+)`/g, '<code>$1</code>')
+  .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+  .replace(/(^|[\s(])[*_]([^*_\s][^*_]*)[*_](?=[\s).,:;!?]|$)/g, '$1<em>$2</em>')
+  .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+  .replace(/(^|[\s(])(https?:\/\/[^\s<)]*[^\s<).,;:!?])/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+
 function md(text) {
-  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  const inline = s => esc(s)
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/(^|[\s(])[*_]([^*_\s][^*_]*)[*_](?=[\s).,:;!?]|$)/g, '$1<em>$2</em>');
+  // Punkter i en checklista får sitt radnummer så att bocken kan skrivas tillbaka till filen
+  const item = i => i.todo
+    ? `<li class="todo"><label><input type="checkbox" data-line="${i.todo.line}" data-text="${esc(i.todo.text)}"${i.todo.done ? ' checked' : ''}><span>${inline(i.text)}</span></label></li>`
+    : `<li>${inline(i.text)}</li>`;
   const out = [];
   let para = [], list = null, fence = null;
   const flush = () => {
     if (para.length) { out.push(`<p>${inline(para.join(' '))}</p>`); para = []; }
-    if (list) { out.push(`<${list.tag}>${list.items.map(i => `<li>${inline(i)}</li>`).join('')}</${list.tag}>`); list = null; }
+    if (list) { out.push(`<${list.tag}${list.items.some(i => i.todo) ? ' class="todos"' : ''}>${list.items.map(item).join('')}</${list.tag}>`); list = null; }
   };
-  for (const line of text.split('\n')) {
+  const lines = text.split('\n');
+  for (let n = 0; n < lines.length; n++) {
+    const line = lines[n];
     if (fence) {
       if (/^\s*```/.test(line)) { out.push(`<pre>${esc(fence.join('\n'))}</pre>`); fence = null; }
       else fence.push(line);
@@ -584,9 +623,10 @@ function md(text) {
       const tag = /\d/.test(m[1]) ? 'ol' : 'ul';
       if (para.length || (list && list.tag !== tag)) flush();
       if (!list) list = { tag, items: [] };
-      list.items.push(m[2]);
+      const todo = m[2].match(/^\[([ xX])\]\s+(.*)$/);
+      list.items.push(todo ? { text: todo[2], todo: { line: n, text: todo[2], done: todo[1] !== ' ' } } : { text: m[2] });
     }
-    else if (list && /^\s{2,}\S/.test(line)) list.items[list.items.length - 1] += ' ' + line.trim();
+    else if (list && /^\s{2,}\S/.test(line)) list.items[list.items.length - 1].text += ' ' + line.trim();
     else { if (list) flush(); para.push(line.trim()); }
   }
   if (fence) out.push(`<pre>${esc(fence.join('\n'))}</pre>`);
@@ -673,6 +713,7 @@ function render() {
   if (route.view === 'new') return renderSettings(document.getElementById('main'), null);
   if (route.view === 'task') return renderTask();
   renderOverview();
+  loadPlan().then(() => { if (route.view === 'overview') renderOverview(true); });
 }
 
 // ---------- översikt ----------
@@ -685,7 +726,7 @@ function greeting() {
 
 function renderOverview(auto = false) {
   const now = new Date();
-  const sig = JSON.stringify([tasks, firstName, now.getMinutes()]);
+  const sig = JSON.stringify([tasks, firstName, now.getMinutes(), plan?.file]);
   if (auto && sig === viewSig) return;
   viewSig = sig;
   const active = tasks.filter(t => t.enabled);
@@ -724,7 +765,7 @@ function renderOverview(auto = false) {
       el('div', { class: 's' }, off ? `${off} ${off === 1 ? 'avstängt' : 'avstängda'}, körs bara för hand` : 'Alla körs enligt schema')));
 
   document.getElementById('main').replaceChildren(el('div', { class: 'page' },
-    head, stats, timeline(now),
+    head, planSection(now), stats, timeline(now),
     el('section', { 'aria-labelledby': 'jobs-h' },
       el('h2', { id: 'jobs-h', style: 'margin-bottom:12px' }, 'Jobb'),
       tasks.length ? el('div', { class: 'jobs' }, ...tasks.map(jobCard))
@@ -738,7 +779,7 @@ function timeline(now) {
   const today = weekday(now);
   const pct = d => ((d.getHours() * 60 + d.getMinutes()) / 1440 * 100).toFixed(2) + '%';
   return el('section', { class: 'card', 'aria-labelledby': 'tl-h' },
-    el('h2', { id: 'tl-h' }, 'Idag'),
+    el('h2', { id: 'tl-h' }, 'Jobbens körningar idag'),
     el('div', { class: 'tl' },
       ...rows.map(t => {
         const st = parseSchedule(t.schedule);
@@ -799,6 +840,108 @@ function recentTable() {
           el('td', { class: st.cls }, cap(st.text)),
           el('td', {}, el('a', { href: taskHref(t.name, 'runs') }, 'Logg')));
       })))));
+}
+
+// ---------- dagsplan på översikten ----------
+// Hämtas från jobbet "dagsplan", som skriver dagsplan-ÅÅÅÅ-MM-DD.md med
+// rubrikerna "## Att göra" och "## Schema".
+
+const PLAN_TASK_RE = /^dagsplan/i;
+const PLAN_FILE_RE = /^dagsplan-(\d{4}-\d{2}-\d{2})\.md$/;
+let plan = null;   // { task, file, content }, { task } om ingen fil finns, annars null
+
+async function loadPlan() {
+  const t = tasks.find(x => PLAN_TASK_RE.test(x.name));
+  if (!t) { plan = null; return; }
+  try {
+    const files = (await call('GET', `/tasks/${enc(t.name)}/files`))
+      .filter(f => PLAN_FILE_RE.test(f.path)).sort((a, b) => b.path.localeCompare(a.path));
+    const f = files[0];
+    if (!f) { plan = { task: t.name }; return; }
+    if (plan?.task === t.name && plan.file?.path === f.path && plan.file.modified === f.modified) return;
+    plan = { task: t.name, file: f, content: await call('GET', `/tasks/${enc(t.name)}/files/${enc(f.path)}`) };
+  } catch { /* behåll den plan vi redan har */ }
+}
+
+const isoDay = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const hhmm = min => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+
+// Raderna under "## <rubrik>" fram till nästa rubrik på nivå 1–2.
+// offset = radnumret i filen där texten börjar.
+function mdSection(content, title) {
+  const lines = content.split('\n');
+  const start = lines.findIndex(l => l.trim().toLowerCase().startsWith('## ' + title.toLowerCase()));
+  if (start < 0) return null;
+  let end = lines.findIndex((l, i) => i > start && /^#{1,2}\s/.test(l));
+  if (end < 0) end = lines.length;
+  return { offset: start + 1, text: lines.slice(start + 1, end).join('\n') };
+}
+
+// "- 09:00–09:30 Möte: X" -> { from: 540, to: 570, text: 'Möte: X' }
+function parseBlocks(text) {
+  const out = [];
+  for (const line of text.split('\n')) {
+    const m = line.match(/^\s*[-*+]\s+(?:\*\*)?(\d{1,2})[:.](\d{2})\s*[–—-]\s*(\d{1,2})[:.](\d{2})(?:\*\*)?\s*:?\s*(.*)$/);
+    if (m) out.push({ from: +m[1] * 60 + +m[2], to: +m[3] * 60 + +m[4], text: m[5].trim() });
+  }
+  return out;
+}
+
+function planSection(now) {
+  if (!plan) return null;
+  const t = tasks.find(x => x.name === plan.task);
+  const runBtn = t && el('button', { type: 'button', disabled: t.running, onclick: e => runNow(t, e.currentTarget) },
+    t.running ? 'Gör dagsplanen…' : 'Gör dagens plan nu');
+  const head = sub => el('div', { class: 'planhead' },
+    el('h2', { id: 'plan-h' }, 'Din dag'), sub ? el('span', { class: 'muted' }, sub) : null,
+    el('span', { class: 'spacer' }), el('a', { href: taskHref(plan.task), class: 'more' }, 'Hela dagsplanen'));
+  if (!plan.file) {
+    return el('section', { class: 'card plan', 'aria-labelledby': 'plan-h' },
+      head(), el('div', { class: 'stale' }, el('span', {}, 'Ingen dagsplan än.'), runBtn));
+  }
+
+  const day = plan.file.path.match(PLAN_FILE_RE)[1];
+  const today = day === isoDay(now);
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+
+  const lines = plan.content.split('\n');
+  const h1 = lines.findIndex(l => /^#\s/.test(l));
+  const h2 = lines.findIndex(l => /^##\s/.test(l));
+  const summary = h2 > h1 ? lines.slice(h1 + 1, h2).join(' ').trim() : '';
+
+  const sched = mdSection(plan.content, 'Schema');
+  const blocks = sched ? parseBlocks(sched.text) : [];
+  const current = today ? blocks.find(b => nowMin >= b.from && nowMin < b.to) : null;
+  const next = today && !current ? blocks.find(b => b.from > nowMin) : null;
+  const schedEl = blocks.length
+    ? el('ol', { class: 'sched' }, ...blocks.map(b => {
+      const cls = [
+        b === current ? 'now' : b === next ? 'next' : today && nowMin >= b.to ? 'past' : '',
+        /^fokus/i.test(b.text) ? 'focus' : /^lunch/i.test(b.text) ? 'lunch' : '',
+      ].filter(Boolean).join(' ');
+      return el('li', { class: cls, 'aria-current': b === current ? 'time' : null },
+        el('span', { class: 'time' }, `${hhmm(b.from)}–${hhmm(b.to)}`),
+        el('span', { class: 'what', html: inline(b.text) }),
+        b === current ? el('span', { class: 'badge run' }, 'Pågår') : b === next ? el('span', { class: 'badge' }, 'Nästa') : null);
+    }))
+    : sched ? el('div', { class: 'md', html: md(sched.text) })
+    : el('p', { class: 'muted' }, 'Rapporten har inget schema.');
+
+  const todo = mdSection(plan.content, 'Att göra');
+  let todoEl = el('p', { class: 'muted' }, 'Inga punkter.');
+  let count = null;
+  if (todo) {
+    todoEl = el('div', { class: 'md', html: md(todo.text) });
+    count = wireTodos(todoEl, plan.task, plan.file, todo.offset);
+  }
+
+  return el('section', { class: 'card plan', 'aria-labelledby': 'plan-h' },
+    head(today ? null : `från ${fmtDay(day + 'T12:00')}`),
+    today ? null : el('div', { class: 'stale' }, el('span', {}, 'Dagens plan är inte gjord än.'), runBtn),
+    summary ? el('p', { class: 'summary', html: inline(summary) }) : null,
+    el('div', { class: 'plangrid' },
+      el('div', {}, el('h3', {}, 'Schema'), schedEl),
+      el('div', {}, el('h3', {}, 'Att göra'), count, todoEl)));
 }
 
 // ---------- åtgärder ----------
@@ -930,9 +1073,49 @@ async function renderTab(auto = false) {
           el('div', { style: 'font-size:13px' }, `${cap(fmtRel(t.lastRun.start))} skrevs ingen ny fil. `, el('a', { href: taskHref(task, 'runs') }, 'Öppna loggen'), '.')) : null,
         el('div', { class: 'meta' }, el('span', { class: 'f' }, file.path), el('span', {}, `Sparad ${fmtRel(file.modified)}`), el('span', {}, `${(file.size / 1024).toFixed(1)} kB`)),
         typeof content !== 'string' ? el('div', { class: 'failbox' }, content.error)
-          : /\.(md|markdown)$/i.test(file.path) ? el('div', { class: 'md', html: md(content) })
+          : /\.(md|markdown)$/i.test(file.path) ? reportView(task, file, content)
           : el('pre', {}, content))));
   } catch (e) { body.replaceChildren(el('div', { class: 'page' }, el('div', { class: 'empty' }, e.message))); }
+}
+
+// Rapporten som formaterad text. Punkter som "- [ ] ..." blir checkboxar och
+// bocken skrivs tillbaka till filen (lokalt via server.mjs, i molnet via cloud.js).
+function reportView(task, file, content) {
+  const view = el('div', { class: 'md', html: md(content) });
+  const count = wireTodos(view, task, file);
+  return count ? el('div', {}, count, view) : view;
+}
+
+// Kopplar checkboxarna i en renderad rapport till filen. offset = radnumret
+// där den renderade texten börjar i filen. Returnerar en räknare, eller null.
+function wireTodos(view, task, file, offset = 0) {
+  const boxes = [...view.querySelectorAll('input[data-line]')];
+  if (!boxes.length) return null;
+  const count = el('div', { class: 'todocount', role: 'status' });
+  const update = () => {
+    const left = boxes.filter(b => !b.checked).length;
+    count.textContent = left ? `Att göra: ${left} kvar av ${boxes.length}` : `Allt avbockat (${boxes.length} av ${boxes.length})`;
+  };
+  update();
+  const url = `/tasks/${enc(task)}/files/${file.path.split('/').map(enc).join('/')}`;
+  for (const b of boxes) {
+    b.addEventListener('change', async () => {
+      const line = Number(b.dataset.line) + offset;
+      b.disabled = true;
+      update();
+      try {
+        await call('PATCH', url, { line, checked: b.checked, text: b.dataset.text });
+        // I molnet ändras inte filens "modified", så dagsplanens kopia uppdateras här
+        if (plan?.task === task && plan.file?.path === file.path) {
+          const lines = plan.content.split('\n');
+          lines[line] = lines[line].replace(/\[[ xX]\]/, b.checked ? '[x]' : '[ ]');
+          plan.content = lines.join('\n');
+        }
+      } catch (err) { b.checked = !b.checked; update(); toast(err.message, true); }
+      b.disabled = false;
+    });
+  }
+  return count;
 }
 
 // ---------- inställningar och nytt jobb ----------
@@ -1154,7 +1337,10 @@ let refreshing = false;
 async function refresh() {
   if (refreshing) return;
   refreshing = true;
-  try { await Promise.all([loadTasks(), loadStatus()]); } finally { refreshing = false; }
+  try {
+    await Promise.all([loadTasks(), loadStatus()]);
+    if (route.view === 'overview') await loadPlan();
+  } finally { refreshing = false; }
   refreshView();
 }
 
