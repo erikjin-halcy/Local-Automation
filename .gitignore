@@ -2,3 +2,5 @@
 logs/
 work/*
 !work/.gitkeep
+data/*
+!data/.gitkeep

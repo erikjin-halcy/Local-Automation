@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local Automation</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e3e2dd;
+    --accent: #c96442; --accent-text: #ffffff; --ok: #2f8a4c; --bad: #c2412d; --run: #2f6fc9; --off: #a5a49e;
+    --code: #f1f0ec; --focus: rgba(201, 100, 66, .25);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1b1b19; --panel: #242422; --text: #ecebe6; --muted: #9c9b95; --line: #363633;
+      --accent: #d97757; --accent-text: #1b1b19; --ok: #5cb87a; --bad: #e46a55; --run: #6a9ee8; --off: #6b6a65;
+      --code: #1e1e1c; --focus: rgba(217, 119, 87, .3);
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  .pills { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+  .pill { font-size: 12px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--off); flex: none; }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.run { background: var(--run); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  .layout { display: grid; grid-template-columns: 280px 1fr; min-height: calc(100vh - 53px); }
+  aside { border-right: 1px solid var(--line); padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+  main { padding: 24px; max-width: 900px; width: 100%; }
+
+  .task { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; background: none; color: inherit; text-align: left; font: inherit; width: 100%; }
+  .task:hover { background: var(--panel); }
+  .task.active { background: var(--panel); border-color: var(--line); }
+  .task .name { font-weight: 500; }
+  .task .sub { font-size: 12px; color: var(--muted); }
+  .task.disabled .name { color: var(--muted); }
+
+  button { font: inherit; border-radius: 8px; padding: 7px 14px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button.danger { color: var(--bad); }
+  button:disabled { opacity: .5; cursor: default; }
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus); }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+  label.field { display: block; margin-bottom: 16px; }
+  label.field > span { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .04em; }
+  input[type=text], input[type=number], input[type=time], select, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+  input[type=text], textarea { width: 100%; }
+  textarea { min-height: 180px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; resize: vertical; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .days label { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .hint.bad { color: var(--bad); }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: var(--code); padding: 1px 5px; border-radius: 4px; }
+  .mcp { display: grid; grid-template-columns: max-content max-content 1fr; gap: 8px 12px; align-items: center; }
+  .mcp .warn { font-size: 12px; color: var(--bad); }
+  @media (max-width: 720px) { .mcp { grid-template-columns: max-content 1fr; } .mcp .warn { grid-column: 1 / -1; } }
+  .switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .actions .spacer { flex: 1; }
+
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: -4px 0 12px; }
+  .tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 12px; color: var(--muted); }
+  .tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+  .list { display: flex; flex-direction: column; }
+  .list button { display: flex; gap: 10px; align-items: center; border: none; border-bottom: 1px solid var(--line); border-radius: 0; background: none; text-align: left; padding: 8px 4px; }
+  .list button:hover, .list button.active { background: var(--bg); }
+  .list .meta { margin-left: auto; color: var(--muted); font-size: 12px; }
+  pre { background: var(--code); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow: auto; max-height: 420px; white-space: pre-wrap; word-break: break-word; font-size: 12px; margin: 12px 0 0; }
+  .empty { color: var(--muted); padding: 24px 4px; }
+  h2 { font-size: 18px; margin: 0 0 16px; }
+
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100vw - 32px); white-space: pre-wrap; }
+  #toast.show { opacity: 1; }
+  #toast.bad { background: var(--bad); color: #fff; }
+
+  @media (max-width: 720px) {
+    .layout { grid-template-columns: 1fr; }
+    aside { border-right: none; border-bottom: 1px solid var(--line); }
+    main { padding: 16px; }
+    header { padding: 12px 16px; flex-wrap: wrap; }
+    .pills { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Local Automation</h1>
+  <div class="pills" id="pills"></div>
+</header>
+<div class="layout">
+  <aside>
+    <button class="primary" id="new-btn">+ Ny uppgift</button>
+    <div id="task-list"></div>
+  </aside>
+  <main id="main"><div class="empty">Välj en uppgift eller skapa en ny.</div></main>
+</div>
+<div id="toast"></div>
+
+<template id="editor-tpl">
+  <div class="card">
+    <h2 data-title></h2>
+    <label class="field"><span>Namn</span>
+      <input type="text" data-name placeholder="t.ex. Sammanfatta Slack" autocomplete="off">
+      <div class="hint" data-name-hint></div>
+    </label>
+    <div class="field">
+      <label class="switch"><input type="checkbox" data-enabled> <span>Aktiv – körs enligt schemat</span></label>
+    </div>
+    <div class="field"><label class="field" style="margin:0"><span>Schema</span></label>
+      <div class="row">
+        <select data-type>
+          <option value="every">Med intervall</option>
+          <option value="daily">Varje dag</option>
+          <option value="weekdays">Vardagar (mån–fre)</option>
+          <option value="weekly">Valda veckodagar</option>
+        </select>
+        <span data-every class="row">var <input type="number" min="1" data-n style="width:80px"> <select data-unit><option value="m">minut</option><option value="h">timme</option></select></span>
+        <span data-days class="row days"></span>
+        <span data-at class="row">kl <input type="time" data-time></span>
+      </div>
+      <div class="hint" data-sched-hint></div>
+    </div>
+    <div class="field"><label class="field" style="margin:0"><span>Åtkomst (MCP)</span></label>
+      <div data-mcp class="mcp"></div>
+      <div class="hint">Läsa är säkrast. Välj "Läsa + skriva" bara om uppgiften ska skicka, posta eller ändra något.</div>
+    </div>
+    <label class="field"><span>Prompt</span>
+      <textarea data-prompt placeholder="Vad ska Claude göra? Claude kommer bara åt mappen /work."></textarea>
+    </label>
+    <div class="actions">
+      <button class="primary" data-save>Spara</button>
+      <button data-run>Kör nu</button>
+      <span class="spacer"></span>
+      <button class="danger" data-delete>Ta bort</button>
+    </div>
+  </div>
+  <div class="card" data-history>
+    <div class="tabs"><button class="active" data-tab="runs">Körningar</button><button data-tab="files">Filer i /work</button></div>
+    <div data-tab-body></div>
+  </div>
+</template>
+
+<script>
+const API = '/api';
+const DAYS = [['mon', 'mån'], ['tue', 'tis'], ['wed', 'ons'], ['thu', 'tor'], ['fri', 'fre'], ['sat', 'lör'], ['sun', 'sön']];
+
+let tasks = [];
+let mcpServers = [];
+const MCP_LABELS = { github: 'GitHub', slack: 'Slack', google: 'Gmail + Kalender' };
+let selected = null;      // namn på vald uppgift, eller '' för ny
+let dirty = false;
+let tab = 'runs';
+let openRun = null;
+let openFile = null;
+
+// ---------- hjälpfunktioner ----------
+
+async function call(method, url, body) {
+  const res = await fetch(API + url, {
+    method,
+    headers: { 'x-local-ui': '1', ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(method === 'GET' ? 15000 : 60000),
+  });
+  const type = res.headers.get('Content-Type') || '';
+  const data = type.includes('json') ? await res.json() : await res.text();
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+function el(tag, props = {}, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === 'class') e.className = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else e[k] = v;
+  }
+  for (const c of children) if (c != null) e.append(c);
+  return e;
+}
+
+let toastTimer;
+function toast(msg, bad = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show' + (bad ? ' bad' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.className = '', bad ? 6000 : 2500);
+}
+
+function fmtTime(iso) {
+  const d = new Date(iso);
+  return d.toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+function runState(r) {
+  if (!r) return { cls: '', text: 'aldrig körd' };
+  if (r.running) return { cls: 'run', text: 'körs nu' };
+  if (r.exit === 0) return { cls: 'ok', text: 'lyckades' };
+  if (r.exit == null) return { cls: '', text: 'okänt resultat' };
+  return { cls: 'bad', text: `misslyckades (${r.exit})` };
+}
+
+// "Sammanfatta Slack" -> "sammanfatta-slack"
+function slugify(s) {
+  return s.trim().toLowerCase()
+    .replace(/[åä]/g, 'a').replace(/ö/g, 'o')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').replace(/-{2,}/g, '-');
+}
+
+// ---------- schema ----------
+
+function parseSchedule(s) {
+  const p = (s || '').trim().split(/\s+/);
+  if (p[0] === 'every') {
+    const m = (p[1] || '').match(/^(\d+)([smh]?)$/i);
+    if (m) {
+      let n = Number(m[1]), u = (m[2] || 's').toLowerCase();
+      if (u === 's') { if (n % 3600 === 0) { n /= 3600; u = 'h'; } else { n = Math.max(1, Math.round(n / 60)); u = 'm'; } }
+      return { type: 'every', n, unit: u };
+    }
+  }
+  if (p[0] === 'daily' || p[0] === 'weekdays') return { type: p[0], time: pad(p[1]) };
+  if (p[0] === 'weekly') return { type: 'weekly', days: (p[1] || '').split(','), time: pad(p[2]) };
+  return { type: 'daily', time: '08:00' };
+}
+
+function pad(t) {
+  const m = (t || '').match(/^(\d{1,2}):(\d{2})$/);
+  return m ? `${m[1].padStart(2, '0')}:${m[2]}` : '08:00';
+}
+
+function buildSchedule(st) {
+  if (st.type === 'every') return `every ${st.n}${st.unit}`;
+  if (st.type === 'weekly') return `weekly ${st.days.join(',')} ${st.time}`;
+  return `${st.type} ${st.time}`;
+}
+
+function describe(s) {
+  const st = parseSchedule(s);
+  if (st.type === 'every') {
+    const unit = st.unit === 'h' ? 'timme' : 'minut';
+    if (st.n === 1) return `Varje ${unit}`;
+    if (st.n === 2) return `Varannan ${unit}`;
+    const suffix = [1, 2].includes(st.n % 10) && ![11, 12].includes(st.n % 100) ? 'a' : 'e';
+    return `Var ${st.n}:${suffix} ${unit}`;
+  }
+  if (st.type === 'daily') return `Varje dag ${st.time}`;
+  if (st.type === 'weekdays') return `Vardagar ${st.time}`;
+  const names = st.days.map(d => (DAYS.find(x => x[0] === d) || [d, d])[1]);
+  return `${names.join(', ')} ${st.time}`;
+}
+
+// ---------- rendering ----------
+
+async function loadStatus() {
+  const pills = document.getElementById('pills');
+  try {
+    const s = await call('GET', '/status');
+    pills.replaceChildren(
+      pill(s.docker, s.docker ? 'Docker igång' : 'Docker av (startas vid körning)', !s.docker && 'off'),
+      pill(s.image, s.image ? 'Image byggd' : 'Image byggs vid första körning', !s.image && 'off'),
+      pill(s.token, s.token ? 'Token finns' : 'Token saknas i .env'),
+    );
+  } catch {
+    pills.replaceChildren(pill(false, 'Servern svarar inte'));
+  }
+}
+
+function pill(ok, text, neutral) {
+  return el('span', { class: 'pill' }, el('span', { class: 'dot ' + (ok ? 'ok' : neutral ? '' : 'bad') }), text);
+}
+
+async function loadTasks() {
+  try { tasks = await call('GET', '/tasks'); } catch (e) { return toast(e.message, true); }
+  const list = document.getElementById('task-list');
+  if (!tasks.length) { list.replaceChildren(el('div', { class: 'empty' }, 'Inga uppgifter än.')); return; }
+  list.replaceChildren(...tasks.map(t => {
+    const st = t.running ? { cls: 'run' } : runState(t.lastRun);
+    return el('button', {
+      class: 'task' + (t.name === selected ? ' active' : '') + (t.enabled ? '' : ' disabled'),
+      onclick: () => select(t.name),
+    },
+      el('span', { class: 'dot ' + st.cls }),
+      el('span', {},
+        el('div', { class: 'name' }, t.name),
+        el('div', { class: 'sub' }, (t.enabled ? describe(t.schedule) : 'Avstängd') + (t.lastRun ? ' · ' + fmtTime(t.lastRun.start) : ''))));
+  }));
+}
+
+function select(name) {
+  if (dirty && !confirm('Du har osparade ändringar. Vill du lämna dem?')) return;
+  selected = name; dirty = false; openRun = null; openFile = null; tab = 'runs';
+  renderEditor();
+  loadTasks();
+}
+
+function renderEditor() {
+  const main = document.getElementById('main');
+  const isNew = selected === '';
+  const t = isNew
+    ? { name: '', schedule: 'daily 08:00', enabled: true, mcp: [], prompt: '' }
+    : tasks.find(x => x.name === selected);
+  if (!t) { main.replaceChildren(el('div', { class: 'empty' }, 'Välj en uppgift eller skapa en ny.')); return; }
+
+  const frag = document.getElementById('editor-tpl').content.cloneNode(true);
+  const $ = s => frag.querySelector(s);
+  $('[data-title]').textContent = isNew ? 'Ny uppgift' : t.name;
+  $('[data-name]').value = t.name;
+  $('[data-enabled]').checked = t.enabled;
+  $('[data-prompt]').value = t.prompt;
+  $('[data-run]').hidden = isNew;
+  $('[data-delete]').hidden = isNew;
+  $('[data-history]').hidden = isNew;
+
+  const st = parseSchedule(t.schedule);
+  $('[data-type]').value = st.type;
+  $('[data-n]').value = st.n || 30;
+  $('[data-unit]').value = st.unit || 'm';
+  $('[data-time]').value = st.time || '08:00';
+  $('[data-days]').append(...DAYS.map(([v, label]) =>
+    el('label', {}, el('input', { type: 'checkbox', value: v, checked: (st.days || ['mon']).includes(v) }), label)));
+
+  $('[data-mcp]').append(...mcpServers.flatMap(s => {
+    const chosen = (t.mcp || []).find(m => m.name === s.name);
+    const sel = el('select', { 'data-mcp-name': s.name },
+      el('option', { value: '', textContent: 'Av' }),
+      ...s.levels.map(l => el('option', { value: l, textContent: l === 'write' ? 'Läsa + skriva' : 'Läsa' })));
+    sel.dataset.mcpName = s.name;
+    sel.value = chosen ? chosen.level : '';
+    const warn = [
+      s.missing.length ? `Saknas i .env: ${s.missing.join(', ')}` : '',
+      s.needsLogin ? 'Kräver engångsinloggning, se README' : '',
+    ].filter(Boolean).join(' · ');
+    return [el('span', {}, MCP_LABELS[s.name] || s.name), sel, el('span', { class: 'warn' }, warn)];
+  }));
+  if (!mcpServers.length) $('[data-mcp]').append(el('span', { class: 'hint' }, 'Inga MCP-servrar i mcp/.'));
+
+  main.replaceChildren(frag);
+  const root = main;
+  const q = s => root.querySelector(s);
+
+  const current = () => {
+    const type = q('[data-type]').value;
+    return buildSchedule({
+      type,
+      n: Math.max(1, Number(q('[data-n]').value) || 1),
+      unit: q('[data-unit]').value,
+      time: q('[data-time]').value || '08:00',
+      days: [...root.querySelectorAll('[data-days] input:checked')].map(i => i.value),
+    });
+  };
+
+  let checkTimer;
+  const syncSchedUi = () => {
+    const type = q('[data-type]').value;
+    q('[data-every]').hidden = type !== 'every';
+    q('[data-days]').hidden = type !== 'weekly';
+    q('[data-at]').hidden = type === 'every';
+    const s = current();
+    const hint = q('[data-sched-hint]');
+    hint.className = 'hint';
+    hint.replaceChildren(describe(s) + ' · ', el('code', {}, s));
+    clearTimeout(checkTimer);
+    checkTimer = setTimeout(async () => {
+      const r = await call('GET', '/check-schedule?s=' + encodeURIComponent(s)).catch(() => null);
+      if (r && !r.ok) { hint.className = 'hint bad'; hint.textContent = r.error; }
+    }, 250);
+  };
+  syncSchedUi();
+  root.querySelectorAll('[data-type], [data-n], [data-unit], [data-time], [data-days] input')
+    .forEach(i => i.addEventListener('input', () => { dirty = true; syncSchedUi(); }));
+  root.querySelectorAll('[data-prompt], [data-enabled], [data-mcp] select')
+    .forEach(i => i.addEventListener('input', () => { dirty = true; }));
+
+  const syncName = () => {
+    const slug = slugify(q('[data-name]').value);
+    const hint = q('[data-name-hint]');
+    hint.className = 'hint' + (slug ? '' : ' bad');
+    if (!slug) hint.textContent = 'Ange ett namn.';
+    else if (isNew || slug !== t.name) hint.replaceChildren('Sparas som ', el('code', {}, `tasks/${slug}.md`),
+      isNew ? '' : '. Loggar och filer flyttas med.');
+    else hint.textContent = '';
+    return slug;
+  };
+  syncName();
+  q('[data-name]').addEventListener('input', () => { dirty = true; syncName(); });
+
+  q('[data-save]').onclick = async e => {
+    const btn = e.currentTarget; btn.disabled = true;
+    const mcp = [...root.querySelectorAll('[data-mcp] select')].filter(s => s.value)
+      .map(s => ({ name: s.dataset.mcpName, level: s.value }));
+    const body = { name: syncName(), schedule: current(), enabled: q('[data-enabled]').checked, mcp, prompt: q('[data-prompt]').value };
+    try {
+      if (!body.name) throw new Error('Ange ett namn');
+      if (isNew) await call('POST', '/tasks', body);
+      else await call('PUT', '/tasks/' + encodeURIComponent(t.name), body);
+      selected = body.name;
+      dirty = false;
+      toast(body.enabled ? 'Sparat och schemalagt' : 'Sparat (avstängd)');
+      await loadTasks();
+      renderEditor();
+    } catch (err) { toast(err.message, true); }
+    btn.disabled = false;
+  };
+
+  if (isNew) { q('[data-name]').focus(); return; }
+
+  q('[data-run]').onclick = async e => {
+    if (dirty) return toast('Spara ändringarna först', true);
+    e.currentTarget.disabled = true;
+    try { await call('POST', `/tasks/${encodeURIComponent(t.name)}/run`); toast('Körning startad'); openRun = null; }
+    catch (err) { toast(err.message, true); }
+    setTimeout(refresh, 800);
+  };
+  q('[data-run]').disabled = t.running;
+
+  q('[data-delete]').onclick = async () => {
+    if (!confirm(`Ta bort uppgiften "${t.name}"? Loggar och filer i work/${t.name} sparas.`)) return;
+    try {
+      await call('DELETE', '/tasks/' + encodeURIComponent(t.name));
+      selected = null; dirty = false;
+      toast('Borttagen');
+      await loadTasks(); renderEditor();
+    } catch (err) { toast(err.message, true); }
+  };
+
+  root.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => {
+    tab = b.dataset.tab;
+    root.querySelectorAll('[data-tab]').forEach(x => x.classList.toggle('active', x === b));
+    renderTab();
+  });
+  renderTab();
+}
+
+let lastRunsSig = '';
+
+// auto = anropad av den periodiska uppdateringen; ritar bara om när något ändrats
+async function renderTab(auto = false) {
+  const body = document.querySelector('[data-tab-body]');
+  if (!body || !selected) return;
+  if (auto && tab !== 'runs') return;
+  const name = encodeURIComponent(selected);
+  try {
+    if (tab === 'runs') {
+      const runs = await call('GET', `/tasks/${name}/runs`);
+      const sig = selected + JSON.stringify(runs);
+      const open = runs.find(r => r.id === openRun);
+      if (auto && sig === lastRunsSig && !(open && open.running)) return;
+      lastRunsSig = sig;
+      if (!runs.length) return body.replaceChildren(el('div', { class: 'empty' }, 'Inga körningar än. Tryck på "Kör nu" för att testa.'));
+      if (!openRun || !runs.some(r => r.id === openRun)) openRun = runs[0].id;
+      const list = el('div', { class: 'list' }, ...runs.map(r => {
+        const s = runState(r);
+        return el('button', { class: r.id === openRun ? 'active' : '', onclick: () => { openRun = r.id; renderTab(); } },
+          el('span', { class: 'dot ' + s.cls }), fmtTime(r.start), el('span', { class: 'meta' }, s.text));
+      }));
+      const { log } = await call('GET', `/tasks/${name}/runs/${openRun}`);
+      body.replaceChildren(list, el('pre', {}, log));
+    } else {
+      const files = await call('GET', `/tasks/${name}/files`);
+      if (!files.length) return body.replaceChildren(el('div', { class: 'empty' }, 'Mappen är tom.'));
+      if (!openFile || !files.some(f => f.path === openFile)) openFile = files[0].path;
+      const list = el('div', { class: 'list' }, ...files.map(f =>
+        el('button', { class: f.path === openFile ? 'active' : '', onclick: () => { openFile = f.path; renderTab(); } },
+          f.path, el('span', { class: 'meta' }, `${(f.size / 1024).toFixed(1)} kB · ${fmtTime(f.modified)}`))));
+      const path = openFile.split('/').map(encodeURIComponent).join('/');
+      const content = await call('GET', `/tasks/${name}/files/${path}`).catch(e => e.message);
+      body.replaceChildren(list, el('pre', {}, content));
+    }
+  } catch (e) { body.replaceChildren(el('div', { class: 'empty' }, e.message)); }
+}
+
+let refreshing = false;
+async function refresh() {
+  if (refreshing) return;
+  refreshing = true;
+  try { await Promise.all([loadTasks(), loadStatus()]); } finally { refreshing = false; }
+  if (selected && !dirty) {
+    const t = tasks.find(x => x.name === selected);
+    const btn = document.querySelector('[data-run]');
+    if (t && btn) btn.disabled = t.running;
+    renderTab(true);
+  }
+}
+
+document.getElementById('new-btn').onclick = () => select('');
+call('GET', '/mcp').then(list => { mcpServers = list; if (selected != null) renderEditor(); }).catch(() => {});
+refresh();
+setInterval(refresh, 4000);
+</script>
+</body>
+</html>
