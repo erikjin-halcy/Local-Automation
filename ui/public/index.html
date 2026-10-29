@@ -2,9 +2,9 @@
 <html lang="sv">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Local Automation</title>
-<meta name="theme-color" content="#c96442">
+<meta name="theme-color" content="#1d1d1b">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Automation">
 <link rel="manifest" href="manifest.webmanifest">
@@ -12,188 +12,390 @@
 <script>window.CLOUD_MODE = !['localhost', '127.0.0.1'].includes(location.hostname);</script>
 <style>
   :root {
-    --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e3e2dd;
-    --accent: #c96442; --accent-text: #ffffff; --ok: #2f8a4c; --bad: #c2412d; --run: #2f6fc9; --off: #a5a49e;
-    --code: #f1f0ec; --focus: rgba(201, 100, 66, .25);
+    --bg: #f6f5f1; --panel: #ffffff; --text: #1d1d1b; --muted: #5f5f5a; --line: #e3e2dd; --line-soft: #efeeea; --field: #f6f5f1;
+    --accent: #b4532f; --accent-text: #ffffff; --accent-soft: #f8eae3; --accent-soft-text: #7e3a23;
+    --ok: #2f7a45; --ok-soft: #e7f2ea; --ok-soft-text: #245f37;
+    --bad: #b83a26; --bad-soft: #fbece8; --bad-soft-text: #8c2a1a;
+    --run: #2f6fc9; --run-soft: #eaf1fb; --run-soft-text: #1f4e8c; --off: #a5a49e;
+    --code: #efeeea; --focus: rgba(180, 83, 47, .28);
+    --side: #1d1d1b; --side-text: #e9e8e3; --side-muted: #b5b4ae; --side-active: #2e2e2b; --side-ok: #5cb87a; --side-line: #3a3a37;
+    --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    --serif: "Iowan Old Style", "Charter", "Source Serif 4", Georgia, serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #1b1b19; --panel: #242422; --text: #ecebe6; --muted: #9c9b95; --line: #363633;
-      --accent: #d97757; --accent-text: #1b1b19; --ok: #5cb87a; --bad: #e46a55; --run: #6a9ee8; --off: #6b6a65;
+      --bg: #1b1b19; --panel: #242422; --text: #ecebe6; --muted: #a3a29c; --line: #363633; --line-soft: #2e2e2b; --field: #1e1e1c;
+      --accent: #d97757; --accent-text: #1b1b19; --accent-soft: #3a2a22; --accent-soft-text: #f0b49c;
+      --ok: #5cb87a; --ok-soft: #22352a; --ok-soft-text: #9ad6ae;
+      --bad: #e46a55; --bad-soft: #3a2420; --bad-soft-text: #f2a99b;
+      --run: #6a9ee8; --run-soft: #1f2b3d; --run-soft-text: #a9c7f2; --off: #6b6a65;
       --code: #1e1e1c; --focus: rgba(217, 119, 87, .3);
+      --side: #141413; --side-active: #2a2a27;
     }
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-  header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
-  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
-  .pills { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
-  .pill { font-size: 12px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--off); flex: none; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 var(--sans); }
+  a { color: var(--accent); }
+  h1 { font-size: 22px; font-weight: 600; margin: 0; }
+  h2 { font-size: 15px; font-weight: 600; margin: 0; }
+  code { font-family: var(--mono); font-size: 12px; background: var(--code); padding: 1px 5px; border-radius: 4px; }
+  pre { background: var(--code); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 12px/1.5 var(--mono); margin: 0; }
+  .muted { color: var(--muted); }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  button, .btn { font: inherit; border-radius: 8px; padding: 8px 14px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
+  button:hover, .btn:hover { border-color: var(--muted); }
+  .primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 500; }
+  .primary:hover { border-color: var(--accent); filter: brightness(1.06); }
+  .danger { color: var(--bad); }
+  button:disabled { opacity: .55; cursor: default; filter: none; }
+  button:focus-visible, .btn:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus); }
+  input[type=text], input[type=number], input[type=time], select, textarea { font: inherit; color: var(--text); background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+  input[type=text], textarea { width: 100%; }
+  input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); margin: 0; }
+  textarea { min-height: 220px; font: 13px/1.6 var(--mono); resize: vertical; }
+
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--off); flex: none; display: inline-block; }
   .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.run { background: var(--run); animation: pulse 1.2s infinite; }
   @keyframes pulse { 50% { opacity: .35; } }
-
-  .layout { display: grid; grid-template-columns: 280px 1fr; min-height: calc(100vh - 53px); }
-  aside { border-right: 1px solid var(--line); padding: 16px; display: flex; flex-direction: column; gap: 8px; }
-  main { padding: 24px; max-width: 900px; width: 100%; }
-
-  .task { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; background: none; color: inherit; text-align: left; font: inherit; width: 100%; }
-  .task:hover { background: var(--panel); }
-  .task.active { background: var(--panel); border-color: var(--line); }
-  .task .name { font-weight: 500; }
-  .task .sub { font-size: 12px; color: var(--muted); }
-  .task.disabled .name { color: var(--muted); }
-
-  button { font: inherit; border-radius: 8px; padding: 7px 14px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
-  button:hover { border-color: var(--muted); }
-  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-  button.danger { color: var(--bad); }
-  button:disabled { opacity: .5; cursor: default; }
-  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus); }
-
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
-  label.field { display: block; margin-bottom: 16px; }
-  label.field > span { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .04em; }
-  input[type=text], input[type=number], input[type=time], select, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
-  input[type=text], textarea { width: 100%; }
-  textarea { min-height: 180px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; resize: vertical; }
-  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .days label { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+  .chip { font-size: 12px; padding: 2px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-soft-text); white-space: nowrap; }
+  .chip.plain { background: var(--line-soft); color: var(--muted); }
+  .badge { font-size: 12px; padding: 2px 10px; border-radius: 999px; background: var(--line-soft); color: var(--muted); }
+  .badge.ok { background: var(--ok-soft); color: var(--ok-soft-text); }
+  .badge.run { background: var(--run-soft); color: var(--run-soft-text); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+  .empty { color: var(--muted); padding: 24px 4px; }
+  .card.empty { padding: 20px; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
   .hint.bad { color: var(--bad); }
-  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: var(--code); padding: 1px 5px; border-radius: 4px; }
-  .mcp { display: grid; grid-template-columns: max-content max-content 1fr; gap: 8px 12px; align-items: center; }
-  .mcp .warn { font-size: 12px; color: var(--bad); }
-  @media (max-width: 720px) { .mcp { grid-template-columns: max-content 1fr; } .mcp .warn { grid-column: 1 / -1; } }
-  .switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
-  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
-  .actions .spacer { flex: 1; }
 
-  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: -4px 0 12px; }
-  .tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 12px; color: var(--muted); }
-  .tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
-  .list { display: flex; flex-direction: column; }
-  .list button { display: flex; gap: 10px; align-items: center; border: none; border-bottom: 1px solid var(--line); border-radius: 0; background: none; text-align: left; padding: 8px 4px; }
-  .list button:hover, .list button.active { background: var(--bg); }
-  .list .meta { margin-left: auto; color: var(--muted); font-size: 12px; }
-  pre { background: var(--code); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow: auto; max-height: 420px; white-space: pre-wrap; word-break: break-word; font-size: 12px; margin: 12px 0 0; }
-  .empty { color: var(--muted); padding: 24px 4px; }
-  h2 { font-size: 18px; margin: 0 0 16px; }
+  /* ---------- ram ---------- */
+  .app { display: flex; min-height: 100vh; }
+  .side { width: 248px; flex: none; background: var(--side); color: var(--side-text); padding: 20px 12px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100vh; overflow: auto; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 4px 10px 18px; }
+  .brand .logo { width: 28px; height: 28px; border-radius: 7px; background: var(--accent); display: flex; align-items: center; justify-content: center; flex: none; }
+  .brand .logo svg { stroke: var(--accent-text); }
+  .brand .title { font-weight: 600; font-size: 15px; color: #fff; }
+  .brand button { margin-left: auto; font-size: 12px; padding: 4px 10px; background: transparent; color: var(--side-text); border-color: var(--side-line); }
+  .brand .top-status { display: none; }
+  .side .label { font-size: 12px; color: var(--side-muted); padding: 16px 10px 6px; font-weight: 500; }
+  .side a.nav { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; color: var(--side-text); text-decoration: none; min-width: 0; }
+  .side a.nav .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .side a.nav:hover { background: var(--side-active); }
+  .side a.nav.active { background: var(--side-active); color: #fff; font-weight: 500; }
+  .side a.nav.off { color: var(--side-muted); }
+  .side .dot.ok { background: var(--side-ok); }
+  .side .foot { margin-top: auto; padding-top: 12px; display: flex; flex-direction: column; gap: 2px; }
+  .status { border-top: 1px solid var(--side-active); margin-top: 6px; padding: 10px 10px 0; font-size: 13px; }
+  .status summary { cursor: pointer; display: flex; align-items: center; gap: 8px; list-style: none; border-radius: 6px; }
+  .status summary::-webkit-details-marker { display: none; }
+  .status ul { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; color: var(--side-muted); font-size: 12px; }
+  .status li { display: flex; align-items: center; gap: 8px; }
+  .bottomnav { display: none; }
+  main { flex: 1; min-width: 0; }
+  .page { padding: 28px 32px 48px; display: flex; flex-direction: column; gap: 22px; max-width: 1120px; }
+
+  /* ---------- översikt ---------- */
+  .pagehead { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .pagehead .spacer { flex: 1; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+  .stat .k { font-size: 12px; color: var(--muted); font-weight: 500; }
+  .stat .v { font-size: 26px; font-weight: 600; margin-top: 2px; line-height: 1.3; }
+  .stat .s { font-size: 13px; color: var(--muted); }
+  .stat .s.ok { color: var(--ok); } .stat .s.bad { color: var(--bad); }
+  .tl { margin-top: 14px; display: flex; flex-direction: column; }
+  .tl-row { display: grid; grid-template-columns: 160px 1fr; align-items: center; min-height: 30px; }
+  .tl-row .who { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 10px; color: inherit; text-decoration: none; }
+  .tl-row .who:hover { text-decoration: underline; }
+  .tl-track { position: relative; height: 30px; background: repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px 25%); border-right: 1px solid var(--line); }
+  .tl-track .mark { position: absolute; top: 50%; width: 12px; height: 12px; border-radius: 50%; transform: translate(-50%, -50%); background: var(--panel); border: 2px solid var(--accent); }
+  .tl-track .mark.ok { background: var(--ok); border-color: var(--ok); }
+  .tl-track .mark.bad { background: var(--bad); border-color: var(--bad); }
+  .tl-track .mark.run { background: var(--run); border-color: var(--run); }
+  .tl-track .band { position: absolute; top: 50%; left: 0; right: 0; height: 6px; transform: translateY(-50%); border-radius: 3px; background: repeating-linear-gradient(90deg, var(--accent) 0 3px, transparent 3px 9px); opacity: .7; }
+  .tl-track .now { position: absolute; top: -2px; bottom: -2px; border-left: 2px solid var(--accent); }
+  .tl-axis { display: flex; justify-content: space-between; font: 11px var(--mono); color: var(--muted); margin-top: 4px; }
+  .jobs { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+  .job { display: flex; flex-direction: column; gap: 10px; }
+  .job.off { background: transparent; border-style: dashed; }
+  .job .head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .job h3 { margin: 0; font-size: 15px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .job h3 a { color: inherit; text-decoration: none; }
+  .job h3 a:hover { text-decoration: underline; }
+  .job .sub { font-size: 13px; color: var(--muted); }
+  .job .sub.bad { color: var(--bad); }
+  .job .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .job .acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+  .job .acts .btn, .job .acts button { font-size: 13px; padding: 6px 12px; }
+  .table { padding: 0; overflow: hidden; }
+  .table h2 { padding: 14px 20px; border-bottom: 1px solid var(--line); }
+  .table .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-weight: 500; padding: 10px 12px; }
+  td { padding: 10px 12px; border-top: 1px solid var(--line-soft); }
+  th:first-child, td:first-child { padding-left: 20px; }
+  th:last-child, td:last-child { padding-right: 20px; text-align: right; }
+  td.mono { font-family: var(--mono); white-space: nowrap; }
+  td.ok { color: var(--ok); } td.bad { color: var(--bad); } td.run { color: var(--run); }
+
+  /* ---------- jobbsida ---------- */
+  .taskhead { background: var(--panel); border-bottom: 1px solid var(--line); padding: 20px 28px 0; display: flex; flex-direction: column; gap: 14px; }
+  .crumbs { font-size: 13px; display: flex; gap: 8px; color: var(--muted); }
+  .crumbs a { text-decoration: none; }
+  .titlerow { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .control { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 10px 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
+  .control label { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-weight: 500; min-height: 36px; }
+  .control .sched { color: var(--muted); }
+  .control .spacer { flex: 1; }
+  .control .err { flex-basis: 100%; color: var(--bad); font-size: 13px; }
+  .tabs { display: flex; gap: 4px; overflow-x: auto; }
+  .tabs a { padding: 10px 12px; border-bottom: 2px solid transparent; color: var(--muted); text-decoration: none; white-space: nowrap; }
+  .tabs a.active { color: var(--text); font-weight: 500; border-bottom-color: var(--accent); }
+  .banner { margin: 16px 28px 0; padding: 12px 14px; border-radius: 10px; background: var(--run-soft); color: var(--run-soft-text); display: flex; align-items: center; gap: 10px; }
+  .split { display: flex; flex-wrap: wrap; align-items: flex-start; }
+  .split .list { flex: 1 1 240px; max-width: 290px; padding: 14px 12px; display: flex; flex-direction: column; gap: 4px; align-self: stretch; border-right: 1px solid var(--line); }
+  .split .list .lbl { font-size: 12px; color: var(--muted); padding: 4px 8px; font-weight: 500; }
+  .split .list button { display: block; width: 100%; text-align: left; padding: 10px; border: 1px solid transparent; background: none; }
+  .split .list button:hover, .split .list button.active { background: var(--panel); border-color: var(--line); }
+  .split .list .t { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .split .list .s { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .split .list .s.bad { color: var(--bad); }
+  .split .view { flex: 999 1 420px; min-width: 0; padding: 24px 36px 48px; }
+  .split .view .meta { font-size: 12px; color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+  .split .view .meta .f { font-family: var(--mono); }
+  .failbox { padding: 14px 16px; border-radius: 10px; background: var(--bad-soft); color: var(--bad-soft-text); margin-bottom: 14px; }
+  .failbox a { color: inherit; }
+  .md { font-family: var(--serif); font-size: 16px; line-height: 1.6; max-width: 720px; overflow-wrap: anywhere; }
+  .md h1 { font-size: 26px; margin: 0 0 12px; }
+  .md h2 { font-size: 20px; margin: 22px 0 6px; }
+  .md h3, .md h4 { font-size: 17px; margin: 18px 0 4px; }
+  .md p { margin: 0 0 10px; }
+  .md ul, .md ol { margin: 0 0 10px; padding-left: 22px; }
+  .md li { margin: 2px 0; }
+  .md hr { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
+  .md blockquote { margin: 0 0 10px; padding-left: 14px; border-left: 3px solid var(--line); color: var(--muted); }
+  .md pre { margin: 0 0 10px; }
+  .md code { font-size: 13px; }
+
+  /* ---------- formulär ---------- */
+  .form { padding: 22px 28px 40px; max-width: 840px; display: flex; flex-direction: column; gap: 16px; }
+  .form .card { display: flex; flex-direction: column; gap: 10px; }
+  .form .card > h2 { font-size: 13px; color: var(--muted); }
+  .form .sentence { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 15px; }
+  .days { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+  .days label { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+  .mcp { display: grid; grid-template-columns: minmax(0, max-content) max-content 1fr; gap: 8px 14px; align-items: center; }
+  .mcp .warn { font-size: 12px; color: var(--bad); }
+  .switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-weight: 500; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+  .row > label { flex: 1; min-width: 160px; }
+  label.field > span { display: block; font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+  .dangerzone { border: 1px solid var(--bad-soft); border-radius: 12px; padding: 16px 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .dangerzone > div { flex: 1; min-width: 220px; }
+  .dangerzone h2 { font-size: 14px; }
+  .savebar { position: sticky; bottom: 16px; display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--text); color: var(--bg); border-radius: 12px; box-shadow: 0 6px 24px rgba(0, 0, 0, .18); }
+  .savebar .spacer { flex: 1; }
+  .savebar .ghost { background: transparent; color: var(--bg); border-color: var(--muted); }
+  .formactions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 
   .login { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 10; padding: 16px; }
   .login .card { max-width: 360px; width: 100%; text-align: center; }
-  .login .card button { width: 100%; margin-top: 12px; }
-  .task .sub.bad { color: var(--bad); }
-  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100vw - 32px); white-space: pre-wrap; }
+  .login .card button { width: 100%; margin-top: 12px; justify-content: center; }
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100vw - 32px); white-space: pre-wrap; z-index: 20; }
   #toast.show { opacity: 1; }
   #toast.bad { background: var(--bad); color: #fff; }
 
+  /* ---------- mobil ---------- */
   @media (max-width: 720px) {
-    .layout { grid-template-columns: 1fr; }
-    aside { border-right: none; border-bottom: 1px solid var(--line); }
-    main { padding: 16px; }
-    header { padding: 12px 16px; flex-wrap: wrap; }
-    .pills { margin-left: 0; }
+    .app { flex-direction: column; }
+    .side { z-index: 5; width: auto; height: auto; padding: calc(10px + env(safe-area-inset-top)) 16px 10px; overflow: visible; }
+    .side > :not(.brand) { display: none !important; }
+    .brand { padding: 0; }
+    .brand .top-status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; margin-left: auto; color: var(--side-text); }
+    .brand .top-status + button { margin-left: 8px; }
+    .bottomnav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; background: var(--panel); border-top: 1px solid var(--line); padding: 4px 4px calc(4px + env(safe-area-inset-bottom)); }
+    .bottomnav a { min-height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; color: var(--muted); text-decoration: none; }
+    .bottomnav a.active { color: var(--accent); font-weight: 600; }
+    main { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+    #toast { bottom: calc(80px + env(safe-area-inset-bottom)); }
+    .page { padding: 16px; gap: 16px; }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .stat { padding: 12px 14px; }
+    .stat .v { font-size: 18px; }
+    .stats .stat:nth-child(3) { grid-column: 1 / -1; }
+    .tl-row { grid-template-columns: 96px 1fr; }
+    .taskhead { padding: 14px 16px 0; gap: 10px; }
+    .control { gap: 10px; }
+    .control .sched { flex-basis: 100%; order: 3; font-size: 13px; }
+    .banner { margin: 12px 16px 0; }
+    .split { flex-direction: column; }
+    .split .list { max-width: none; width: 100%; border-right: none; border-top: 1px solid var(--line); order: 2; padding: 8px 16px 16px; }
+    .split .list button { min-height: 48px; }
+    .split .view { padding: 16px; width: 100%; }
+    .md { font-size: 15px; }
+    .form { padding: 16px; }
+    .mcp { grid-template-columns: minmax(0, 1fr) max-content; }
+    .mcp .warn { grid-column: 1 / -1; }
+    button, .btn { min-height: 44px; }
+    .brand button { min-height: 32px; }
+    .savebar { bottom: calc(80px + env(safe-area-inset-bottom)); }
   }
 </style>
 </head>
 <body>
-<header>
-  <h1>Local Automation</h1>
-  <div class="pills" id="pills"></div>
-</header>
-<div class="layout">
-  <aside>
-    <button class="primary" id="new-btn">+ Ny uppgift</button>
-    <button id="profile-btn">Min profil</button>
-    <div id="task-list"></div>
+<div class="app">
+  <aside class="side">
+    <header class="brand">
+      <span class="logo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
+      <span class="title">Local Automation</span>
+      <span class="top-status" id="top-status"></span>
+    </header>
+    <a class="nav" href="#/" data-nav="overview">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+      <span class="txt">Översikt</span>
+    </a>
+    <div class="label">Jobb</div>
+    <div id="nav-jobs"></div>
+    <a class="nav" href="#/new" data-nav="new">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      <span class="txt">Nytt jobb</span>
+    </a>
+    <div class="foot">
+      <a class="nav" href="#/profile" data-nav="profile">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+        <span class="txt">Min profil</span>
+      </a>
+      <details class="status" id="status"><summary></summary><ul></ul></details>
+    </div>
   </aside>
-  <main id="main"><div class="empty">Välj en uppgift eller skapa en ny.</div></main>
+  <main id="main"></main>
 </div>
-<div id="toast"></div>
+<nav class="bottomnav" aria-label="Huvudmeny">
+  <a href="#/" data-nav="overview">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Översikt
+  </a>
+  <a href="#/new" data-nav="new">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nytt jobb
+  </a>
+  <a href="#/profile" data-nav="profile">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>Profil
+  </a>
+</nav>
+<div id="toast" role="status"></div>
 
 <template id="profile-tpl">
-  <div class="card">
-    <h2>Min profil</h2>
-    <p class="hint" style="margin-top:-8px">Läggs först i varje uppgift så att Claude vet vem "jag" är.</p>
-    <div class="actions" style="margin-bottom:16px">
-      <button data-detect>Fyll i från kopplade konton</button>
-      <span class="hint" data-detect-hint></span>
+  <div class="form">
+    <div class="pagehead">
+      <div>
+        <h1>Min profil</h1>
+        <p class="muted" style="margin:2px 0 0">Läggs först i varje jobb så att Claude vet vem "jag" är.</p>
+      </div>
     </div>
-    <label class="field"><span>Namn</span><input type="text" data-f="name" autocomplete="off"></label>
-    <label class="field"><span>E-post (en per rad)</span><textarea data-f="emails" style="min-height:70px"></textarea></label>
-    <div class="row" style="align-items:flex-start">
-      <label class="field" style="flex:1;min-width:160px"><span>Slack-namn</span><input type="text" data-f="slack.name" autocomplete="off"></label>
-      <label class="field" style="flex:1;min-width:140px"><span>Slack-ID</span><input type="text" data-f="slack.id" placeholder="U0…" autocomplete="off"></label>
-      <label class="field" style="flex:1;min-width:140px"><span>Slack-workspace</span><input type="text" data-f="slack.workspace" autocomplete="off"></label>
+    <div class="card">
+      <div class="formactions">
+        <button type="button" data-detect>Fyll i från kopplade konton</button>
+        <span class="hint" data-detect-hint style="margin:0"></span>
+      </div>
+      <label class="field"><span>Namn</span><input type="text" data-f="name" autocomplete="off"></label>
+      <label class="field"><span>E-post (en per rad)</span><textarea data-f="emails" style="min-height:70px"></textarea></label>
+      <div class="row">
+        <label class="field"><span>Slack-namn</span><input type="text" data-f="slack.name" autocomplete="off"></label>
+        <label class="field"><span>Slack-ID</span><input type="text" data-f="slack.id" placeholder="U0…" autocomplete="off"></label>
+        <label class="field"><span>Slack-workspace</span><input type="text" data-f="slack.workspace" autocomplete="off"></label>
+      </div>
+      <div class="row">
+        <label class="field"><span>GitHub-användarnamn</span><input type="text" data-f="github" autocomplete="off"></label>
+        <label class="field"><span>Tidszon</span><input type="text" data-f="timezone" placeholder="Asia/Hong_Kong" autocomplete="off"></label>
+      </div>
+      <label class="field"><span>Övrigt (roll, språk, vad Claude bör veta)</span><textarea data-f="notes" style="min-height:90px" placeholder="t.ex. Utvecklare på Halcy. Skriv på svenska."></textarea></label>
     </div>
-    <div class="row" style="align-items:flex-start">
-      <label class="field" style="flex:1;min-width:160px"><span>GitHub-användarnamn</span><input type="text" data-f="github" autocomplete="off"></label>
-      <label class="field" style="flex:1;min-width:160px"><span>Tidszon</span><input type="text" data-f="timezone" placeholder="Asia/Hong_Kong" autocomplete="off"></label>
+    <div class="card">
+      <h2>Det här läggs först i varje prompt</h2>
+      <pre data-preview></pre>
     </div>
-    <label class="field"><span>Övrigt (roll, språk, vad Claude bör veta)</span><textarea data-f="notes" style="min-height:90px" placeholder="t.ex. Utvecklare på Halcy. Skriv på svenska."></textarea></label>
-    <label class="field"><span>Det här läggs först i varje prompt</span><pre data-preview style="margin:0"></pre></label>
-    <div class="actions"><button class="primary" data-save>Spara</button></div>
+    <div class="formactions"><button type="button" class="primary" data-save>Spara profilen</button></div>
   </div>
 </template>
 
-<template id="editor-tpl">
-  <div class="card">
-    <h2 data-title></h2>
-    <label class="field"><span>Namn</span>
-      <input type="text" data-name placeholder="t.ex. Sammanfatta Slack" autocomplete="off">
-      <div class="hint" data-name-hint></div>
-    </label>
-    <div class="field">
-      <label class="switch"><input type="checkbox" data-enabled> <span>Aktiv – körs enligt schemat</span></label>
-    </div>
-    <div class="field"><label class="field" style="margin:0"><span>Schema</span></label>
-      <div class="row">
-        <select data-type>
-          <option value="every">Med intervall</option>
-          <option value="daily">Varje dag</option>
-          <option value="weekdays">Vardagar (mån–fre)</option>
-          <option value="weekly">Valda veckodagar</option>
-        </select>
-        <span data-every class="row">var <input type="number" min="1" data-n style="width:80px"> <select data-unit><option value="m">minut</option><option value="h">timme</option></select></span>
-        <span data-days class="row days"></span>
-        <span data-at class="row">kl <input type="time" data-time></span>
+<template id="settings-tpl">
+  <div class="form">
+    <div class="pagehead" data-newhead hidden>
+      <div>
+        <h1>Nytt jobb</h1>
+        <p class="muted" style="margin:2px 0 0">Beskriv vad Claude ska göra och när.</p>
       </div>
-      <div class="hint" data-sched-hint></div>
     </div>
-    <div class="field"><label class="field" style="margin:0"><span>Åtkomst (MCP)</span></label>
+    <section class="card">
+      <h2>Namn</h2>
+      <input type="text" data-name placeholder="t.ex. Sammanfatta Slack" autocomplete="off" aria-label="Jobbets namn">
+      <div class="hint" data-name-hint style="margin:0"></div>
+    </section>
+    <section class="card">
+      <h2>När</h2>
+      <div class="sentence">
+        Kör
+        <select data-type aria-label="Schematyp">
+          <option value="daily">varje dag</option>
+          <option value="weekdays">vardagar (mån–fre)</option>
+          <option value="weekly">valda veckodagar</option>
+          <option value="every">med intervall</option>
+        </select>
+        <span data-every class="sentence">var <input type="number" min="1" data-n style="width:80px" aria-label="Antal"> <select data-unit aria-label="Enhet"><option value="m">minut</option><option value="h">timme</option></select></span>
+        <span data-days class="days"></span>
+        <span data-at class="sentence">kl <input type="time" data-time aria-label="Tid"></span>
+      </div>
+      <div class="hint" data-sched-hint style="margin:0"></div>
+      <label class="switch" data-enabled-row hidden><input type="checkbox" data-enabled> Kör automatiskt enligt schemat</label>
+    </section>
+    <section class="card">
+      <h2>Åtkomst</h2>
       <div data-mcp class="mcp"></div>
-      <div class="hint">Läsa är säkrast. Välj "Läsa + skriva" bara om uppgiften ska skicka, posta eller ändra något.</div>
+      <div class="hint" style="margin:0">Läsa är säkrast. Välj "Läsa + skriva" bara om jobbet ska skicka, posta eller ändra något.</div>
+    </section>
+    <section class="card">
+      <h2>Vad Claude ska göra</h2>
+      <textarea data-prompt aria-label="Prompt" placeholder="Vad ska Claude göra? Claude kommer bara åt mappen /work."></textarea>
+    </section>
+    <div class="formactions" data-create hidden>
+      <button type="button" class="primary" data-save-new>Skapa jobb</button>
+      <a class="btn" href="#/">Avbryt</a>
     </div>
-    <label class="field"><span>Prompt</span>
-      <textarea data-prompt placeholder="Vad ska Claude göra? Claude kommer bara åt mappen /work."></textarea>
-    </label>
-    <div class="actions">
-      <button class="primary" data-save>Spara</button>
-      <button data-run>Kör nu</button>
+    <section class="dangerzone" data-danger hidden>
+      <div>
+        <h2>Ta bort jobbet</h2>
+        <div class="muted" style="font-size:13px" data-danger-text></div>
+      </div>
+      <button type="button" class="danger" data-delete>Ta bort</button>
+    </section>
+    <div class="savebar" data-savebar hidden>
+      <span class="dot" style="background:var(--accent)"></span>
+      <span>Osparade ändringar</span>
       <span class="spacer"></span>
-      <button class="danger" data-delete>Ta bort</button>
+      <button type="button" class="ghost" data-undo>Ångra</button>
+      <button type="button" class="primary" data-save>Spara</button>
     </div>
-  </div>
-  <div class="card" data-history>
-    <div class="tabs"><button class="active" data-tab="runs">Körningar</button><button data-tab="files">Filer i /work</button></div>
-    <div data-tab-body></div>
   </div>
 </template>
 
 <script>
 const API = '/api';
 const DAYS = [['mon', 'mån'], ['tue', 'tis'], ['wed', 'ons'], ['thu', 'tor'], ['fri', 'fre'], ['sat', 'lör'], ['sun', 'sön']];
+const MCP_LABELS = { github: 'GitHub', slack: 'Slack', linear: 'Linear', google: 'Gmail + Kalender (privat)', 'google-work': 'Gmail + Kalender (jobb)' };
+const TABS = [['results', 'Resultat'], ['runs', 'Körningar och loggar'], ['settings', 'Inställningar']];
+const PLAY = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>';
 
 let tasks = [];
 let mcpServers = [];
-const MCP_LABELS = { github: 'GitHub', slack: 'Slack', google: 'Gmail + Kalender (privat)', 'google-work': 'Gmail + Kalender (jobb)' };
-let selected = null;      // namn på vald uppgift, eller '' för ny
+let lastStatus = null;
+let firstName = '';
+let route = { view: 'overview' };
+let currentHash = location.hash;
 let dirty = false;
-let tab = 'runs';
 let openRun = null;
 let openFile = null;
+let viewSig = '';
 
 // ---------- hjälpfunktioner ----------
 
@@ -211,14 +413,18 @@ async function call(method, url, body) {
   return data;
 }
 
+// html: används bara med text som redan escapats (md()) eller fasta strängar
 function el(tag, props = {}, ...children) {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {
+    if (v == null || v === false) continue;
     if (k === 'class') e.className = v;
+    else if (k === 'html') e.innerHTML = v;
     else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (k.startsWith('aria-') || k.startsWith('data-')) e.setAttribute(k, v);
     else e[k] = v;
   }
-  for (const c of children) if (c != null) e.append(c);
+  for (const c of children.flat()) if (c != null && c !== false) e.append(c);
   return e;
 }
 
@@ -231,10 +437,32 @@ function toast(msg, bad = false) {
   toastTimer = setTimeout(() => t.className = '', bad ? 6000 : 2500);
 }
 
+const enc = encodeURIComponent;
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+const taskHref = (name, tab = 'results') => `#/task/${enc(name)}/${tab}`;
+// "sammanfatta-slack" -> "Sammanfatta slack"
+const pretty = name => cap(name.replace(/[-_]+/g, ' ').trim());
+
 function fmtTime(iso) {
-  const d = new Date(iso);
-  return d.toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' });
+  return new Date(iso).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' });
 }
+const clock = d => d.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
+
+function dayDiff(d) {
+  const a = new Date(d); a.setHours(0, 0, 0, 0);
+  const b = new Date(); b.setHours(0, 0, 0, 0);
+  return Math.round((a - b) / 86400000);
+}
+
+// "idag", "imorgon", "igår" eller "tors 29 okt"
+function fmtDay(date) {
+  const n = dayDiff(date);
+  if (n === 0) return 'idag';
+  if (n === 1) return 'imorgon';
+  if (n === -1) return 'igår';
+  return new Date(date).toLocaleDateString('sv-SE', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+const fmtRel = date => `${fmtDay(date)} ${clock(new Date(date))}`;
 
 function runState(r) {
   if (!r) return { cls: '', text: 'aldrig körd' };
@@ -243,12 +471,13 @@ function runState(r) {
   if (r.exit == null) return { cls: '', text: 'okänt resultat' };
   return { cls: 'bad', text: `misslyckades (${r.exit})` };
 }
+const taskState = t => t.running ? { cls: 'run', text: 'körs nu' } : runState(t.lastRun);
 
 // "Sammanfatta Slack" -> "sammanfatta-slack"
 function slugify(s) {
   return s.trim().toLowerCase()
     .replace(/[åä]/g, 'a').replace(/ö/g, 'o')
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').replace(/-{2,}/g, '-');
 }
 
@@ -295,58 +524,545 @@ function describe(s) {
   return `${names.join(', ')} ${st.time}`;
 }
 
-// ---------- rendering ----------
+// Veckodagar (0 = mån) då schemat körs på en fast tid, eller null för intervall
+function scheduleDays(st) {
+  if (st.type === 'daily') return [0, 1, 2, 3, 4, 5, 6];
+  if (st.type === 'weekdays') return [0, 1, 2, 3, 4];
+  if (st.type === 'weekly') return st.days.map(d => DAYS.findIndex(x => x[0] === d)).filter(i => i >= 0);
+  return null;
+}
+const weekday = d => (d.getDay() + 6) % 7;
 
-async function loadStatus() {
-  const pills = document.getElementById('pills');
-  try {
-    const s = await call('GET', '/status');
-    const agent = 'agentOnline' in s
-      ? [pill(s.agentOnline, s.agentOnline ? 'Macen online' : `Macen offline${s.lastSeen ? ' sedan ' + fmtTime(s.lastSeen) : ''}`)]
-      : [];
-    pills.replaceChildren(...agent,
-      pill(s.docker, s.docker ? 'Docker igång' : 'Docker av (startas vid körning)', !s.docker && 'off'),
-      pill(s.image, s.image ? 'Image byggd' : 'Image byggs vid första körning', !s.image && 'off'),
-      pill(s.token, s.token ? 'Token finns' : 'Token saknas i .env'),
-    );
-  } catch {
-    pills.replaceChildren(pill(false, 'Servern svarar inte'));
+// Nästa körning enligt schemat, eller null för intervallscheman
+function nextRun(s, now = new Date()) {
+  const st = parseSchedule(s);
+  const days = scheduleDays(st);
+  if (!days) return null;
+  const [h, m] = st.time.split(':').map(Number);
+  for (let i = 0; i < 8; i++) {
+    const d = new Date(now); d.setDate(d.getDate() + i); d.setHours(h, m, 0, 0);
+    if (d > now && days.includes(weekday(d))) return d;
   }
+  return null;
 }
 
-function pill(ok, text, neutral) {
-  return el('span', { class: 'pill' }, el('span', { class: 'dot ' + (ok ? 'ok' : neutral ? '' : 'bad') }), text);
+function schedText(t) {
+  if (!t.enabled) return 'Körs bara när du trycker på Kör nu';
+  const next = nextRun(t.schedule);
+  return describe(t.schedule) + (next ? ` · nästa: ${fmtRel(next)}` : '');
+}
+
+// ---------- markdown ----------
+
+// Enkel markdown för rapporterna. All text escapas innan formatering läggs på,
+// så innehållet i filerna kan aldrig bli HTML.
+function md(text) {
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const inline = s => esc(s)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[\s(])[*_]([^*_\s][^*_]*)[*_](?=[\s).,:;!?]|$)/g, '$1<em>$2</em>');
+  const out = [];
+  let para = [], list = null, fence = null;
+  const flush = () => {
+    if (para.length) { out.push(`<p>${inline(para.join(' '))}</p>`); para = []; }
+    if (list) { out.push(`<${list.tag}>${list.items.map(i => `<li>${inline(i)}</li>`).join('')}</${list.tag}>`); list = null; }
+  };
+  for (const line of text.split('\n')) {
+    if (fence) {
+      if (/^\s*```/.test(line)) { out.push(`<pre>${esc(fence.join('\n'))}</pre>`); fence = null; }
+      else fence.push(line);
+      continue;
+    }
+    let m;
+    if (/^\s*```/.test(line)) { flush(); fence = []; }
+    else if (!line.trim()) flush();
+    else if ((m = line.match(/^(#{1,6})\s+(.*)$/))) { flush(); const n = Math.min(m[1].length, 4); out.push(`<h${n}>${inline(m[2])}</h${n}>`); }
+    else if (/^\s*(-{3,}|\*{3,})\s*$/.test(line)) { flush(); out.push('<hr>'); }
+    else if ((m = line.match(/^>\s?(.*)$/))) { flush(); out.push(`<blockquote>${inline(m[1])}</blockquote>`); }
+    else if ((m = line.match(/^\s*([-*+]|\d+[.)])\s+(.*)$/))) {
+      const tag = /\d/.test(m[1]) ? 'ol' : 'ul';
+      if (para.length || (list && list.tag !== tag)) flush();
+      if (!list) list = { tag, items: [] };
+      list.items.push(m[2]);
+    }
+    else if (list && /^\s{2,}\S/.test(line)) list.items[list.items.length - 1] += ' ' + line.trim();
+    else { if (list) flush(); para.push(line.trim()); }
+  }
+  if (fence) out.push(`<pre>${esc(fence.join('\n'))}</pre>`);
+  flush();
+  return out.join('\n');
+}
+
+// ---------- ram: status och meny ----------
+
+async function loadStatus() {
+  try { lastStatus = await call('GET', '/status'); } catch { lastStatus = null; }
+  renderStatus();
+}
+
+function renderStatus() {
+  const s = lastStatus;
+  const items = [];   // [ok, text, neutral]
+  let ok = true, text;
+  if (!s) { ok = false; text = 'Servern svarar inte'; }
+  else if (s.mode === 'cloud') { text = 'Körs i molnet'; items.push([true, text]); }
+  else {
+    if ('agentOnline' in s) items.push([s.agentOnline, s.agentOnline ? 'Macen online' : `Macen offline${s.lastSeen ? ' sedan ' + fmtTime(s.lastSeen) : ''}`]);
+    items.push([s.docker, s.docker ? 'Docker igång' : 'Docker av (startas vid körning)', true]);
+    items.push([s.image, s.image ? 'Image byggd' : 'Image byggs vid första körning', true]);
+    items.push([s.token, s.token ? 'Token finns' : 'Token saknas i .env']);
+    const problem = items.find(([good, , neutral]) => !good && !neutral);
+    ok = !problem;
+    text = problem ? problem[1].replace(/ sedan .*/, '') : 'agentOnline' in s ? 'Macen online' : 'Allt fungerar';
+  }
+  const dot = () => el('span', { class: 'dot ' + (ok ? 'ok' : 'bad') });
+  const box = document.getElementById('status');
+  box.querySelector('summary').replaceChildren(dot(), text);
+  box.querySelector('ul').replaceChildren(...items.map(([good, t, neutral]) =>
+    el('li', {}, el('span', { class: 'dot ' + (good ? 'ok' : neutral ? '' : 'bad') }), t)));
+  document.getElementById('top-status').replaceChildren(dot(), text);
 }
 
 async function loadTasks() {
-  try { tasks = await call('GET', '/tasks'); } catch (e) { return toast(e.message, true); }
-  const list = document.getElementById('task-list');
-  if (!tasks.length) { list.replaceChildren(el('div', { class: 'empty' }, 'Inga uppgifter än.')); return; }
-  list.replaceChildren(...tasks.map(t => {
-    const st = t.running ? { cls: 'run' } : runState(t.lastRun);
-    return el('button', {
-      class: 'task' + (t.name === selected ? ' active' : '') + (t.enabled ? '' : ' disabled'),
-      onclick: () => select(t.name),
-    },
-      el('span', { class: 'dot ' + st.cls }),
-      el('span', {},
-        el('div', { class: 'name' }, t.name),
-        t.error
-          ? el('div', { class: 'sub bad' }, 'Fel: ' + t.error)
-          : el('div', { class: 'sub' }, (t.enabled ? describe(t.schedule) : 'Avstängd') + (t.lastRun ? ' · ' + fmtTime(t.lastRun.start) : ''))));
-  }));
+  try { tasks = await call('GET', '/tasks'); } catch (e) { toast(e.message, true); }
+  renderNav();
 }
 
-function select(name) {
-  if (dirty && !confirm('Du har osparade ändringar. Vill du lämna dem?')) return;
-  selected = name; dirty = false; openRun = null; openFile = null; tab = 'runs';
-  if (name === PROFILE) renderProfile(); else renderEditor();
-  loadTasks();
+function renderNav() {
+  const active = route.view === 'task' ? route.name : null;
+  document.getElementById('nav-jobs').replaceChildren(...tasks.map(t =>
+    el('a', {
+      class: 'nav' + (t.name === active ? ' active' : '') + (t.enabled ? '' : ' off'),
+      href: taskHref(t.name), 'aria-current': t.name === active ? 'page' : null,
+    }, el('span', { class: 'dot ' + taskState(t).cls }), el('span', { class: 'txt' }, pretty(t.name)))));
+  document.querySelectorAll('[data-nav]').forEach(a => {
+    const on = a.dataset.nav === route.view;
+    a.classList.toggle('active', on);
+    if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  });
+}
+
+// ---------- routing ----------
+// #/  ·  #/new  ·  #/profile  ·  #/task/<namn>/<results|runs|settings>
+
+function parseRoute() {
+  const p = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
+  if (p[0] === 'new') return { view: 'new' };
+  if (p[0] === 'profile') return { view: 'profile' };
+  if (p[0] === 'task' && p[1]) return { view: 'task', name: p[1], tab: TABS.some(x => x[0] === p[2]) ? p[2] : 'results' };
+  return { view: 'overview' };
+}
+
+function onHashChange() {
+  if (location.hash === currentHash) return;
+  if (dirty && !confirm('Du har osparade ändringar. Vill du lämna dem?')) { location.hash = currentHash; return; }
+  const prev = route;
+  currentHash = location.hash;
+  route = parseRoute();
+  dirty = false;
+  if (!(prev.view === 'task' && route.view === 'task' && prev.name === route.name)) { openRun = null; openFile = null; }
+  render();
+}
+
+function render() {
+  viewSig = '';
+  renderNav();
+  window.scrollTo(0, 0);
+  if (route.view === 'profile') return renderProfile();
+  if (route.view === 'new') return renderSettings(document.getElementById('main'), null);
+  if (route.view === 'task') return renderTask();
+  renderOverview();
+}
+
+// ---------- översikt ----------
+
+function greeting() {
+  const h = new Date().getHours();
+  const g = h < 5 ? 'God natt' : h < 10 ? 'God morgon' : h < 18 ? 'Hej' : 'God kväll';
+  return firstName ? `${g}, ${firstName}` : g;
+}
+
+function renderOverview(auto = false) {
+  const now = new Date();
+  const sig = JSON.stringify([tasks, firstName, now.getMinutes()]);
+  if (auto && sig === viewSig) return;
+  viewSig = sig;
+  const active = tasks.filter(t => t.enabled);
+  const upcoming = active.map(t => ({ t, at: nextRun(t.schedule, now) })).filter(x => x.at).sort((a, b) => a.at - b.at);
+  const next = upcoming[0];
+  const nextNames = next ? upcoming.filter(x => +x.at === +next.at).map(x => pretty(x.t.name)) : [];
+  const recent = tasks.filter(t => t.lastRun && now - new Date(t.lastRun.start) < 86400000);
+  const failed = recent.filter(t => taskState(t).cls === 'bad');
+  const running = tasks.filter(t => t.running);
+  const off = tasks.length - active.length;
+
+  const head = el('div', { class: 'pagehead' },
+    el('div', {},
+      el('h1', {}, greeting()),
+      el('p', { class: 'muted', style: 'margin:2px 0 0' },
+        cap(now.toLocaleDateString('sv-SE', { weekday: 'long', day: 'numeric', month: 'long' })) +
+        ` · ${active.length} ${active.length === 1 ? 'aktivt jobb' : 'aktiva jobb'}`)),
+    el('span', { class: 'spacer' }),
+    el('a', { class: 'btn primary', href: '#/new' }, '+ Nytt jobb'));
+
+  const stats = el('div', { class: 'stats' },
+    el('div', { class: 'card stat' },
+      el('div', { class: 'k' }, 'Senaste dygnet'),
+      el('div', { class: 'v' }, `${recent.length} jobb kördes`),
+      running.length ? el('div', { class: 's' }, `${running.length} körs just nu`)
+        : !recent.length ? el('div', { class: 's' }, 'Inga körningar')
+        : failed.length ? el('div', { class: 's bad' }, `${failed.length} misslyckades`)
+        : el('div', { class: 's ok' }, 'Alla lyckades')),
+    el('div', { class: 'card stat' },
+      el('div', { class: 'k' }, 'Nästa körning'),
+      el('div', { class: 'v' }, next ? clock(next.at) : '–'),
+      el('div', { class: 's' }, next ? `${cap(fmtDay(next.at))} · ${nextNames.join(', ')}` : active.length ? 'Bara intervalljobb' : 'Inga aktiva jobb')),
+    el('div', { class: 'card stat' },
+      el('div', { class: 'k' }, 'Jobb'),
+      el('div', { class: 'v' }, `${active.length} av ${tasks.length} aktiva`),
+      el('div', { class: 's' }, off ? `${off} ${off === 1 ? 'avstängt' : 'avstängda'}, körs bara för hand` : 'Alla körs enligt schema')));
+
+  document.getElementById('main').replaceChildren(el('div', { class: 'page' },
+    head, stats, timeline(now),
+    el('section', { 'aria-labelledby': 'jobs-h' },
+      el('h2', { id: 'jobs-h', style: 'margin-bottom:12px' }, 'Jobb'),
+      tasks.length ? el('div', { class: 'jobs' }, ...tasks.map(jobCard))
+        : el('div', { class: 'card empty' }, 'Inga jobb än. ', el('a', { href: '#/new' }, 'Skapa det första.'))),
+    recentTable()));
+}
+
+function timeline(now) {
+  const rows = tasks.filter(t => t.enabled);
+  if (!rows.length) return null;
+  const today = weekday(now);
+  const pct = d => ((d.getHours() * 60 + d.getMinutes()) / 1440 * 100).toFixed(2) + '%';
+  return el('section', { class: 'card', 'aria-labelledby': 'tl-h' },
+    el('h2', { id: 'tl-h' }, 'Idag'),
+    el('div', { class: 'tl' },
+      ...rows.map(t => {
+        const st = parseSchedule(t.schedule);
+        const days = scheduleDays(st);
+        const track = el('div', { class: 'tl-track' });
+        if (!days) track.append(el('span', { class: 'band', title: describe(t.schedule) }));
+        else if (days.includes(today)) {
+          const [h, m] = st.time.split(':').map(Number);
+          const at = new Date(now); at.setHours(h, m, 0, 0);
+          const ranToday = t.lastRun && dayDiff(t.lastRun.start) === 0 && new Date(t.lastRun.start) >= at - 60000;
+          const state = at > now ? 'kommer' : ranToday ? taskState(t).text : 'kördes inte';
+          const mark = el('span', { class: 'mark ' + (at <= now && ranToday ? taskState(t).cls : ''), title: `${st.time} · ${state}` });
+          mark.style.left = pct(at);
+          track.append(mark);
+        }
+        const nowLine = el('span', { class: 'now', 'aria-hidden': 'true' });
+        nowLine.style.left = pct(now);
+        track.append(nowLine);
+        return el('div', { class: 'tl-row' }, el('a', { class: 'who', href: taskHref(t.name) }, pretty(t.name)), track);
+      }),
+      el('div', { class: 'tl-row' }, el('span'),
+        el('div', { class: 'tl-axis', 'aria-hidden': 'true' }, ...['00', '06', '12', '18', '24'].map(x => el('span', {}, x))))));
+}
+
+function mcpChips(t) {
+  if (!t.mcp?.length) return [el('span', { class: 'chip plain' }, 'Ingen åtkomst')];
+  return t.mcp.map(m => el('span', { class: 'chip' }, `${MCP_LABELS[m.name] || m.name} · ${m.level === 'write' ? 'läsa + skriva' : 'läsa'}`));
+}
+
+function jobCard(t) {
+  const st = taskState(t);
+  const sub = t.error ? el('div', { class: 'sub bad' }, 'Fel: ' + t.error)
+    : el('div', { class: 'sub' },
+      (t.enabled ? describe(t.schedule) : 'Avstängd') +
+      (t.running ? ' · körs nu' : t.lastRun ? ` · ${fmtRel(t.lastRun.start)}, ${st.text}` : ' · aldrig körd'));
+  return el('article', { class: 'card job' + (t.enabled ? '' : ' off') },
+    el('div', { class: 'head' }, el('span', { class: 'dot ' + st.cls }), el('h3', {}, el('a', { href: taskHref(t.name) }, pretty(t.name)))),
+    sub,
+    el('div', { class: 'chips' }, ...mcpChips(t)),
+    el('div', { class: 'acts' },
+      el('a', { class: 'btn', href: taskHref(t.name) }, 'Resultat'),
+      t.enabled ? null : el('button', { type: 'button', onclick: e => setEnabled(t, true, e.currentTarget) }, 'Slå på'),
+      el('button', { type: 'button', disabled: t.running, onclick: e => runNow(t, e.currentTarget) }, t.running ? 'Körs…' : 'Kör nu')));
+}
+
+function recentTable() {
+  const rows = tasks.filter(t => t.lastRun).sort((a, b) => b.lastRun.start.localeCompare(a.lastRun.start));
+  if (!rows.length) return null;
+  return el('section', { class: 'card table', 'aria-labelledby': 'recent-h' },
+    el('h2', { id: 'recent-h' }, 'Senaste körningen per jobb'),
+    el('div', { class: 'scroll' }, el('table', {},
+      el('thead', {}, el('tr', {}, el('th', {}, 'Jobb'), el('th', {}, 'Start'), el('th', {}, 'Resultat'), el('th', {}, el('span', { class: 'sr' }, 'Länk')))),
+      el('tbody', {}, ...rows.map(t => {
+        const st = taskState(t);
+        return el('tr', {},
+          el('td', {}, pretty(t.name)),
+          el('td', { class: 'mono' }, fmtTime(t.lastRun.start)),
+          el('td', { class: st.cls }, cap(st.text)),
+          el('td', {}, el('a', { href: taskHref(t.name, 'runs') }, 'Logg')));
+      })))));
+}
+
+// ---------- åtgärder ----------
+
+async function runNow(t, btn) {
+  if (btn) btn.disabled = true;
+  try { await call('POST', `/tasks/${enc(t.name)}/run`); toast('Körning startad'); openRun = null; }
+  catch (err) { toast(err.message, true); if (btn) btn.disabled = false; }
+  setTimeout(refresh, 800);
+}
+
+// Slår på eller av schemat utan att röra resten av jobbet
+async function setEnabled(t, enabled, input) {
+  if (input) input.disabled = true;
+  try {
+    await call('PUT', '/tasks/' + enc(t.name), { name: t.name, schedule: t.schedule, enabled, mcp: t.mcp || [], prompt: t.prompt });
+    toast(enabled ? 'Jobbet körs nu enligt schemat' : 'Avstängt – körs bara för hand');
+  } catch (err) {
+    toast(err.message, true);
+    if (input && 'checked' in input) input.checked = !enabled;
+  }
+  if (input) input.disabled = false;
+  await loadTasks();
+  refreshView();
+}
+
+// ---------- jobbsida ----------
+
+function renderTask() {
+  const main = document.getElementById('main');
+  const t = tasks.find(x => x.name === route.name);
+  if (!t) {
+    main.replaceChildren(el('div', { class: 'page' }, el('div', { class: 'empty' }, 'Jobbet finns inte. ', el('a', { href: '#/' }, 'Till översikten'))));
+    return;
+  }
+  const body = el('div', { 'data-body': '' });
+  main.replaceChildren(el('div', { class: 'taskhead', 'data-head': '' }), el('div', { 'data-banner': '' }), body);
+  renderTaskHead(t);
+  if (route.tab === 'settings') renderSettings(body, t);
+  else renderTab();
+}
+
+function renderTaskHead(t) {
+  const head = document.querySelector('[data-head]');
+  if (!head) return;
+  const badge = t.running ? ['run', 'Körs nu'] : t.enabled ? ['ok', 'Aktiv'] : ['', 'Avstängd'];
+  head.replaceChildren(
+    el('div', { class: 'crumbs' }, el('a', { href: '#/' }, 'Översikt'), el('span', { 'aria-hidden': 'true' }, '/'), el('span', {}, 'Jobb')),
+    el('div', { class: 'titlerow' }, el('h1', {}, pretty(t.name)), el('span', { class: 'badge ' + badge[0] }, badge[1])),
+    el('div', { class: 'control' },
+      el('label', {}, el('input', { type: 'checkbox', checked: t.enabled, onchange: e => setEnabled(t, e.target.checked, e.target) }), 'Kör automatiskt'),
+      el('span', { class: 'sched' }, schedText(t)),
+      el('span', { class: 'spacer' }),
+      el('button', {
+        type: 'button', class: 'primary', disabled: t.running, html: PLAY + (t.running ? 'Körs…' : 'Kör nu'),
+        onclick: e => dirty ? toast('Spara ändringarna först', true) : runNow(t, e.currentTarget),
+      }),
+      t.error ? el('div', { class: 'err' }, 'Fel: ' + t.error) : null),
+    el('nav', { class: 'tabs', 'aria-label': 'Jobbflikar' }, ...TABS.map(([id, label]) =>
+      el('a', { href: taskHref(t.name, id), class: route.tab === id ? 'active' : '', 'aria-current': route.tab === id ? 'page' : null }, label))));
+  document.querySelector('[data-banner]').replaceChildren(t.running && route.tab !== 'settings'
+    ? el('div', { class: 'banner', role: 'status' }, el('span', { class: 'dot run' }),
+      route.tab === 'results' ? 'Jobbet körs. Nya filer dyker upp här när det är klart.' : 'Jobbet körs. Loggen uppdateras automatiskt.')
+    : '');
+}
+
+// auto = anropad av den periodiska uppdateringen; ritar bara om när något ändrats
+async function renderTab(auto = false) {
+  const body = document.querySelector('[data-body]');
+  if (!body || route.view !== 'task' || route.tab === 'settings') return;
+  const { name: task, tab } = route;
+  const name = enc(task);
+  const stale = () => route.view !== 'task' || route.name !== task || route.tab !== tab;
+  try {
+    if (tab === 'runs') {
+      const runs = await call('GET', `/tasks/${name}/runs`);
+      if (stale()) return;
+      const open = runs.find(r => r.id === openRun);
+      if (auto && tab + task + JSON.stringify(runs) + openRun === viewSig && !(open && open.running)) return;
+      if (!runs.length) {
+        viewSig = tab + task + '[]' + openRun;
+        return body.replaceChildren(el('div', { class: 'page' }, el('div', { class: 'card empty' }, 'Inga körningar än. Tryck på "Kör nu" för att testa.')));
+      }
+      if (!open) openRun = runs[0].id;
+      const { log } = await call('GET', `/tasks/${name}/runs/${openRun}`);
+      if (stale()) return;
+      viewSig = tab + task + JSON.stringify(runs) + openRun;
+      const run = runs.find(r => r.id === openRun);
+      body.replaceChildren(el('div', { class: 'split' },
+        el('div', { class: 'list' }, el('div', { class: 'lbl' }, 'Körningar'),
+          ...runs.map(r => {
+            const s = runState(r);
+            return el('button', { type: 'button', class: r.id === openRun ? 'active' : '', 'aria-pressed': String(r.id === openRun), onclick: () => { openRun = r.id; renderTab(); } },
+              el('div', { class: 't' }, el('span', { class: 'dot ' + s.cls }), cap(fmtRel(r.start))),
+              el('div', { class: 's' + (s.cls === 'bad' ? ' bad' : '') }, cap(s.text)));
+          })),
+        el('div', { class: 'view' },
+          el('div', { class: 'meta' }, el('span', {}, `Körning ${fmtTime(run.start)}`), el('span', {}, cap(runState(run).text))),
+          el('pre', {}, log || '(tom logg)'))));
+      return;
+    }
+
+    const files = (await call('GET', `/tasks/${name}/files`)).slice().sort((a, b) => b.modified.localeCompare(a.modified));
+    if (stale()) return;
+    const t = tasks.find(x => x.name === task);
+    const sig = tab + task + JSON.stringify(files) + openFile + JSON.stringify(t?.lastRun);
+    if (auto && sig === viewSig) return;
+    if (!files.length) {
+      viewSig = sig;
+      return body.replaceChildren(el('div', { class: 'page' }, el('div', { class: 'card empty' },
+        'Jobbet har inte skrivit några filer än. Det Claude sparar i /work visas här.',
+        t && taskState(t).cls === 'bad' ? el('div', { style: 'margin-top:8px' }, 'Senaste körningen misslyckades – ', el('a', { href: taskHref(task, 'runs') }, 'se loggen'), '.') : null)));
+    }
+    if (!openFile || !files.some(f => f.path === openFile)) openFile = files[0].path;
+    const file = files.find(f => f.path === openFile);
+    const content = await call('GET', `/tasks/${name}/files/${file.path.split('/').map(enc).join('/')}`).catch(e => ({ error: e.message }));
+    if (stale()) return;
+    viewSig = tab + task + JSON.stringify(files) + openFile + JSON.stringify(t?.lastRun);
+    // Senaste körningen misslyckades efter att den nyaste filen skrevs
+    const failedSince = t?.lastRun && taskState(t).cls === 'bad' && new Date(t.lastRun.start) > new Date(files[0].modified);
+    body.replaceChildren(el('div', { class: 'split' },
+      el('div', { class: 'list' }, el('div', { class: 'lbl' }, 'Filer från det här jobbet'),
+        ...files.map(f => el('button', { type: 'button', class: f.path === openFile ? 'active' : '', 'aria-pressed': String(f.path === openFile), onclick: () => { openFile = f.path; renderTab(); } },
+          el('div', { class: 't' }, cap(fmtDay(f.modified))),
+          el('div', { class: 's' }, f.path)))),
+      el('article', { class: 'view' },
+        failedSince ? el('div', { class: 'failbox' },
+          el('strong', {}, 'Senaste körningen misslyckades'),
+          el('div', { style: 'font-size:13px' }, `${cap(fmtRel(t.lastRun.start))} skrevs ingen ny fil. `, el('a', { href: taskHref(task, 'runs') }, 'Öppna loggen'), '.')) : null,
+        el('div', { class: 'meta' }, el('span', { class: 'f' }, file.path), el('span', {}, `Sparad ${fmtRel(file.modified)}`), el('span', {}, `${(file.size / 1024).toFixed(1)} kB`)),
+        typeof content !== 'string' ? el('div', { class: 'failbox' }, content.error)
+          : /\.(md|markdown)$/i.test(file.path) ? el('div', { class: 'md', html: md(content) })
+          : el('pre', {}, content))));
+  } catch (e) { body.replaceChildren(el('div', { class: 'page' }, el('div', { class: 'empty' }, e.message))); }
+}
+
+// ---------- inställningar och nytt jobb ----------
+
+function renderSettings(container, t) {
+  const isNew = !t;
+  const task = t || { name: '', schedule: 'daily 08:00', enabled: true, mcp: [], prompt: '' };
+  const frag = document.getElementById('settings-tpl').content.cloneNode(true);
+  const $ = s => frag.querySelector(s);
+  $('[data-newhead]').hidden = !isNew;
+  $('[data-enabled-row]').hidden = !isNew;
+  $('[data-create]').hidden = !isNew;
+  $('[data-danger]').hidden = isNew;
+  $('[data-name]').value = task.name;
+  $('[data-enabled]').checked = task.enabled;
+  $('[data-prompt]').value = task.prompt;
+  if (!isNew) $('[data-danger-text]').textContent = `Loggar och filer i work/${task.name} sparas.`;
+
+  const st = parseSchedule(task.schedule);
+  $('[data-type]').value = st.type;
+  $('[data-n]').value = st.n || 30;
+  $('[data-unit]').value = st.unit || 'm';
+  $('[data-time]').value = st.time || '08:00';
+  $('[data-days]').append(...DAYS.map(([v, label]) =>
+    el('label', {}, el('input', { type: 'checkbox', value: v, checked: (st.days || ['mon']).includes(v) }), label)));
+
+  $('[data-mcp]').append(...mcpServers.flatMap(s => {
+    const chosen = (task.mcp || []).find(m => m.name === s.name);
+    const label = MCP_LABELS[s.name] || s.name;
+    const sel = el('select', { 'aria-label': `Åtkomst till ${label}` },
+      el('option', { value: '', textContent: 'Av' }),
+      ...s.levels.map(l => el('option', { value: l, textContent: l === 'write' ? 'Läsa + skriva' : 'Läsa' })));
+    sel.dataset.mcpName = s.name;
+    sel.value = chosen ? chosen.level : '';
+    const warn = [
+      s.missing.length ? `Saknas i .env: ${s.missing.join(', ')}` : '',
+      s.needsLogin ? 'Kräver engångsinloggning, se README' : '',
+    ].filter(Boolean).join(' · ');
+    return [el('span', {}, label), sel, el('span', { class: 'warn' }, warn)];
+  }));
+  if (!mcpServers.length) $('[data-mcp]').append(el('span', { class: 'hint' }, 'Inga MCP-servrar i mcp/.'));
+
+  container.replaceChildren(frag);
+  const root = container;
+  const q = s => root.querySelector(s);
+  const markDirty = () => { dirty = true; if (!isNew) q('[data-savebar]').hidden = false; };
+
+  const current = () => buildSchedule({
+    type: q('[data-type]').value,
+    n: Math.max(1, Number(q('[data-n]').value) || 1),
+    unit: q('[data-unit]').value,
+    time: q('[data-time]').value || '08:00',
+    days: [...root.querySelectorAll('[data-days] input:checked')].map(i => i.value),
+  });
+
+  let checkTimer;
+  const syncSchedUi = () => {
+    const type = q('[data-type]').value;
+    q('[data-every]').hidden = type !== 'every';
+    q('[data-days]').hidden = type !== 'weekly';
+    q('[data-at]').hidden = type === 'every';
+    const s = current();
+    const hint = q('[data-sched-hint]');
+    hint.className = 'hint';
+    hint.replaceChildren(describe(s) + ' · ', el('code', {}, s));
+    clearTimeout(checkTimer);
+    checkTimer = setTimeout(async () => {
+      const r = await call('GET', '/check-schedule?s=' + enc(s)).catch(() => null);
+      if (r && !r.ok) { hint.className = 'hint bad'; hint.textContent = r.error; }
+    }, 250);
+  };
+  syncSchedUi();
+  root.querySelectorAll('[data-type], [data-n], [data-unit], [data-time], [data-days] input')
+    .forEach(i => i.addEventListener('input', () => { markDirty(); syncSchedUi(); }));
+  root.querySelectorAll('[data-prompt], [data-enabled], [data-mcp] select')
+    .forEach(i => i.addEventListener('input', markDirty));
+
+  const syncName = () => {
+    const slug = slugify(q('[data-name]').value);
+    const hint = q('[data-name-hint]');
+    hint.className = 'hint' + (slug ? '' : ' bad');
+    if (!slug) hint.textContent = 'Ange ett namn.';
+    else hint.replaceChildren('Sparas som ', el('code', {}, `tasks/${slug}.md`),
+      !isNew && slug !== task.name ? '. Loggar och filer flyttas med.' : '');
+    return slug;
+  };
+  syncName();
+  q('[data-name]').addEventListener('input', () => { markDirty(); syncName(); });
+
+  const save = async btn => {
+    btn.disabled = true;
+    const mcp = [...root.querySelectorAll('[data-mcp] select')].filter(s => s.value)
+      .map(s => ({ name: s.dataset.mcpName, level: s.value }));
+    // Ett befintligt jobb slås på och av i raden ovanför flikarna
+    const enabled = isNew ? q('[data-enabled]').checked : (tasks.find(x => x.name === task.name) || task).enabled;
+    const body = { name: syncName(), schedule: current(), enabled, mcp, prompt: q('[data-prompt]').value };
+    try {
+      if (!body.name) throw new Error('Ange ett namn');
+      if (isNew) await call('POST', '/tasks', body);
+      else await call('PUT', '/tasks/' + enc(task.name), body);
+      dirty = false;
+      toast(isNew ? (body.enabled ? 'Jobbet skapat och schemalagt' : 'Jobbet skapat (avstängt)') : 'Sparat');
+      await loadTasks();
+      const target = taskHref(body.name, isNew ? 'results' : 'settings');
+      if (location.hash !== target) location.hash = target;
+      else render();
+    } catch (err) { toast(err.message, true); }
+    btn.disabled = false;
+  };
+
+  if (isNew) {
+    q('[data-save-new]').onclick = e => save(e.currentTarget);
+    q('[data-name]').focus();
+    return;
+  }
+  q('[data-save]').onclick = e => save(e.currentTarget);
+  q('[data-undo]').onclick = () => { dirty = false; renderSettings(container, tasks.find(x => x.name === task.name) || task); };
+  q('[data-delete]').onclick = async () => {
+    if (!confirm(`Ta bort jobbet "${pretty(task.name)}"? Loggar och filer i work/${task.name} sparas.`)) return;
+    try {
+      await call('DELETE', '/tasks/' + enc(task.name));
+      dirty = false;
+      toast('Borttaget');
+      await loadTasks();
+      location.hash = '#/';
+    } catch (err) { toast(err.message, true); }
+  };
 }
 
 // ---------- profil ----------
-
-const PROFILE = '@profile';
 
 // Samma text som profileText() i ui/lib.mjs
 function profileText(p) {
@@ -369,7 +1085,7 @@ async function renderProfile() {
   const main = document.getElementById('main');
   let data;
   try { data = await call('GET', '/profile'); } catch (e) { return toast(e.message, true); }
-  if (selected !== PROFILE) return;
+  if (route.view !== 'profile') return;
   const frag = document.getElementById('profile-tpl').content.cloneNode(true);
   main.replaceChildren(frag);
   const q = s => main.querySelector(s);
@@ -411,186 +1127,27 @@ async function renderProfile() {
 
   q('[data-save]').onclick = async e => {
     const btn = e.currentTarget; btn.disabled = true;
-    try { await call('PUT', '/profile', read()); dirty = false; toast('Profilen sparad'); }
-    catch (err) { toast(err.message, true); }
-    btn.disabled = false;
-  };
-}
-
-function renderEditor() {
-  const main = document.getElementById('main');
-  const isNew = selected === '';
-  const t = isNew
-    ? { name: '', schedule: 'daily 08:00', enabled: true, mcp: [], prompt: '' }
-    : tasks.find(x => x.name === selected);
-  if (!t) { main.replaceChildren(el('div', { class: 'empty' }, 'Välj en uppgift eller skapa en ny.')); return; }
-
-  const frag = document.getElementById('editor-tpl').content.cloneNode(true);
-  const $ = s => frag.querySelector(s);
-  $('[data-title]').textContent = isNew ? 'Ny uppgift' : t.name;
-  $('[data-name]').value = t.name;
-  $('[data-enabled]').checked = t.enabled;
-  $('[data-prompt]').value = t.prompt;
-  $('[data-run]').hidden = isNew;
-  $('[data-delete]').hidden = isNew;
-  $('[data-history]').hidden = isNew;
-
-  const st = parseSchedule(t.schedule);
-  $('[data-type]').value = st.type;
-  $('[data-n]').value = st.n || 30;
-  $('[data-unit]').value = st.unit || 'm';
-  $('[data-time]').value = st.time || '08:00';
-  $('[data-days]').append(...DAYS.map(([v, label]) =>
-    el('label', {}, el('input', { type: 'checkbox', value: v, checked: (st.days || ['mon']).includes(v) }), label)));
-
-  $('[data-mcp]').append(...mcpServers.flatMap(s => {
-    const chosen = (t.mcp || []).find(m => m.name === s.name);
-    const sel = el('select', { 'data-mcp-name': s.name },
-      el('option', { value: '', textContent: 'Av' }),
-      ...s.levels.map(l => el('option', { value: l, textContent: l === 'write' ? 'Läsa + skriva' : 'Läsa' })));
-    sel.dataset.mcpName = s.name;
-    sel.value = chosen ? chosen.level : '';
-    const warn = [
-      s.missing.length ? `Saknas i .env: ${s.missing.join(', ')}` : '',
-      s.needsLogin ? 'Kräver engångsinloggning, se README' : '',
-    ].filter(Boolean).join(' · ');
-    return [el('span', {}, MCP_LABELS[s.name] || s.name), sel, el('span', { class: 'warn' }, warn)];
-  }));
-  if (!mcpServers.length) $('[data-mcp]').append(el('span', { class: 'hint' }, 'Inga MCP-servrar i mcp/.'));
-
-  main.replaceChildren(frag);
-  const root = main;
-  const q = s => root.querySelector(s);
-
-  const current = () => {
-    const type = q('[data-type]').value;
-    return buildSchedule({
-      type,
-      n: Math.max(1, Number(q('[data-n]').value) || 1),
-      unit: q('[data-unit]').value,
-      time: q('[data-time]').value || '08:00',
-      days: [...root.querySelectorAll('[data-days] input:checked')].map(i => i.value),
-    });
-  };
-
-  let checkTimer;
-  const syncSchedUi = () => {
-    const type = q('[data-type]').value;
-    q('[data-every]').hidden = type !== 'every';
-    q('[data-days]').hidden = type !== 'weekly';
-    q('[data-at]').hidden = type === 'every';
-    const s = current();
-    const hint = q('[data-sched-hint]');
-    hint.className = 'hint';
-    hint.replaceChildren(describe(s) + ' · ', el('code', {}, s));
-    clearTimeout(checkTimer);
-    checkTimer = setTimeout(async () => {
-      const r = await call('GET', '/check-schedule?s=' + encodeURIComponent(s)).catch(() => null);
-      if (r && !r.ok) { hint.className = 'hint bad'; hint.textContent = r.error; }
-    }, 250);
-  };
-  syncSchedUi();
-  root.querySelectorAll('[data-type], [data-n], [data-unit], [data-time], [data-days] input')
-    .forEach(i => i.addEventListener('input', () => { dirty = true; syncSchedUi(); }));
-  root.querySelectorAll('[data-prompt], [data-enabled], [data-mcp] select')
-    .forEach(i => i.addEventListener('input', () => { dirty = true; }));
-
-  const syncName = () => {
-    const slug = slugify(q('[data-name]').value);
-    const hint = q('[data-name-hint]');
-    hint.className = 'hint' + (slug ? '' : ' bad');
-    if (!slug) hint.textContent = 'Ange ett namn.';
-    else if (isNew || slug !== t.name) hint.replaceChildren('Sparas som ', el('code', {}, `tasks/${slug}.md`),
-      isNew ? '' : '. Loggar och filer flyttas med.');
-    else hint.textContent = '';
-    return slug;
-  };
-  syncName();
-  q('[data-name]').addEventListener('input', () => { dirty = true; syncName(); });
-
-  q('[data-save]').onclick = async e => {
-    const btn = e.currentTarget; btn.disabled = true;
-    const mcp = [...root.querySelectorAll('[data-mcp] select')].filter(s => s.value)
-      .map(s => ({ name: s.dataset.mcpName, level: s.value }));
-    const body = { name: syncName(), schedule: current(), enabled: q('[data-enabled]').checked, mcp, prompt: q('[data-prompt]').value };
     try {
-      if (!body.name) throw new Error('Ange ett namn');
-      if (isNew) await call('POST', '/tasks', body);
-      else await call('PUT', '/tasks/' + encodeURIComponent(t.name), body);
-      selected = body.name;
+      const p = read();
+      await call('PUT', '/profile', p);
       dirty = false;
-      toast(body.enabled ? 'Sparat och schemalagt' : 'Sparat (avstängd)');
-      await loadTasks();
-      renderEditor();
+      firstName = (p.name || '').split(/\s+/)[0];
+      toast('Profilen sparad');
     } catch (err) { toast(err.message, true); }
     btn.disabled = false;
   };
-
-  if (isNew) { q('[data-name]').focus(); return; }
-
-  q('[data-run]').onclick = async e => {
-    if (dirty) return toast('Spara ändringarna först', true);
-    e.currentTarget.disabled = true;
-    try { await call('POST', `/tasks/${encodeURIComponent(t.name)}/run`); toast('Körning startad'); openRun = null; }
-    catch (err) { toast(err.message, true); }
-    setTimeout(refresh, 800);
-  };
-  q('[data-run]').disabled = t.running;
-
-  q('[data-delete]').onclick = async () => {
-    if (!confirm(`Ta bort uppgiften "${t.name}"? Loggar och filer i work/${t.name} sparas.`)) return;
-    try {
-      await call('DELETE', '/tasks/' + encodeURIComponent(t.name));
-      selected = null; dirty = false;
-      toast('Borttagen');
-      await loadTasks(); renderEditor();
-    } catch (err) { toast(err.message, true); }
-  };
-
-  root.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => {
-    tab = b.dataset.tab;
-    root.querySelectorAll('[data-tab]').forEach(x => x.classList.toggle('active', x === b));
-    renderTab();
-  });
-  renderTab();
 }
 
-let lastRunsSig = '';
+// ---------- uppdatering ----------
 
-// auto = anropad av den periodiska uppdateringen; ritar bara om när något ändrats
-async function renderTab(auto = false) {
-  const body = document.querySelector('[data-tab-body]');
-  if (!body || !selected) return;
-  if (auto && tab !== 'runs') return;
-  const name = encodeURIComponent(selected);
-  try {
-    if (tab === 'runs') {
-      const runs = await call('GET', `/tasks/${name}/runs`);
-      const sig = selected + JSON.stringify(runs);
-      const open = runs.find(r => r.id === openRun);
-      if (auto && sig === lastRunsSig && !(open && open.running)) return;
-      lastRunsSig = sig;
-      if (!runs.length) return body.replaceChildren(el('div', { class: 'empty' }, 'Inga körningar än. Tryck på "Kör nu" för att testa.'));
-      if (!openRun || !runs.some(r => r.id === openRun)) openRun = runs[0].id;
-      const list = el('div', { class: 'list' }, ...runs.map(r => {
-        const s = runState(r);
-        return el('button', { class: r.id === openRun ? 'active' : '', onclick: () => { openRun = r.id; renderTab(); } },
-          el('span', { class: 'dot ' + s.cls }), fmtTime(r.start), el('span', { class: 'meta' }, s.text));
-      }));
-      const { log } = await call('GET', `/tasks/${name}/runs/${openRun}`);
-      body.replaceChildren(list, el('pre', {}, log));
-    } else {
-      const files = await call('GET', `/tasks/${name}/files`);
-      if (!files.length) return body.replaceChildren(el('div', { class: 'empty' }, 'Mappen är tom.'));
-      if (!openFile || !files.some(f => f.path === openFile)) openFile = files[0].path;
-      const list = el('div', { class: 'list' }, ...files.map(f =>
-        el('button', { class: f.path === openFile ? 'active' : '', onclick: () => { openFile = f.path; renderTab(); } },
-          f.path, el('span', { class: 'meta' }, `${(f.size / 1024).toFixed(1)} kB · ${fmtTime(f.modified)}`))));
-      const path = openFile.split('/').map(encodeURIComponent).join('/');
-      const content = await call('GET', `/tasks/${name}/files/${path}`).catch(e => e.message);
-      body.replaceChildren(list, el('pre', {}, content));
-    }
-  } catch (e) { body.replaceChildren(el('div', { class: 'empty' }, e.message)); }
+// Ritar om det som kan ha ändrats, utan att röra formulär som redigeras
+function refreshView() {
+  if (route.view === 'overview') return renderOverview(true);
+  if (route.view !== 'task') return;
+  const t = tasks.find(x => x.name === route.name);
+  if (!t) { if (!dirty) renderTask(); return; }
+  renderTaskHead(t);
+  renderTab(true);
 }
 
 let refreshing = false;
@@ -598,19 +1155,24 @@ async function refresh() {
   if (refreshing) return;
   refreshing = true;
   try { await Promise.all([loadTasks(), loadStatus()]); } finally { refreshing = false; }
-  if (selected && !dirty) {
-    const t = tasks.find(x => x.name === selected);
-    const btn = document.querySelector('[data-run]');
-    if (t && btn) btn.disabled = t.running;
-    renderTab(true);
-  }
+  refreshView();
 }
 
-function start() {
-  document.getElementById('new-btn').onclick = () => select('');
-  document.getElementById('profile-btn').onclick = () => select(PROFILE);
-  call('GET', '/mcp').then(list => { mcpServers = list; if (selected != null) renderEditor(); }).catch(() => {});
-  refresh();
+async function start() {
+  window.addEventListener('hashchange', onHashChange);
+  window.addEventListener('beforeunload', e => { if (dirty) e.preventDefault(); });
+  route = parseRoute();
+  currentHash = location.hash;
+  call('GET', '/mcp').then(list => {
+    mcpServers = list;
+    if (!dirty && (route.view === 'new' || route.tab === 'settings')) render();
+  }).catch(() => {});
+  call('GET', '/profile').then(p => {
+    firstName = (p.profile?.name || p.detected?.name || '').split(/\s+/)[0];
+    if (route.view === 'overview') renderOverview(true);
+  }).catch(() => {});
+  await Promise.all([loadTasks(), loadStatus()]);
+  render();
   setInterval(refresh, 4000);
 }
 
