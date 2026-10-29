@@ -188,7 +188,7 @@ const DAYS = [['mon', 'mån'], ['tue', 'tis'], ['wed', 'ons'], ['thu', 'tor'], [
 
 let tasks = [];
 let mcpServers = [];
-const MCP_LABELS = { github: 'GitHub', slack: 'Slack', google: 'Gmail + Kalender (privat)', 'google-work': 'Gmail + Kalender (jobb)' };
+const MCP_LABELS = { github: 'GitHub', slack: 'Slack', linear: 'Linear', google: 'Gmail + Kalender (privat)', 'google-work': 'Gmail + Kalender (jobb)' };
 let selected = null;      // namn på vald uppgift, eller '' för ny
 let dirty = false;
 let tab = 'runs';
@@ -301,6 +301,7 @@ async function loadStatus() {
   const pills = document.getElementById('pills');
   try {
     const s = await call('GET', '/status');
+    if (s.mode === 'cloud') return pills.replaceChildren(pill(true, 'Körs i molnet'));
     const agent = 'agentOnline' in s
       ? [pill(s.agentOnline, s.agentOnline ? 'Macen online' : `Macen offline${s.lastSeen ? ' sedan ' + fmtTime(s.lastSeen) : ''}`)]
       : [];
