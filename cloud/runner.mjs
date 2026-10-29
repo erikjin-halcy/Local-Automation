@@ -104,7 +104,9 @@ for (const m of task.mcp || []) {
 // ---------- kör Claude ----------
 
 const intro = profileText(profile);
-const prompt = intro ? `${intro}\nUppgift:\n${task.prompt}` : task.prompt;
+// Åtgärder i rapporterna blir en checklista som går att bocka av i webbappen (samma text som i run.sh)
+const format = 'Format: Om du skriver en rapport till /work, skriv det som kräver svar eller åtgärd från mig som en checklista i markdown, en punkt per sak: `- [ ] Vad som ska göras (vem det gäller, eventuell deadline)`. Använd checklistan bara för sådant som faktiskt kräver en åtgärd.';
+const prompt = `${intro ? `${intro}\nUppgift:\n` : ''}${task.prompt}\n\n${format}`;
 const args = [
   ...(mcpArgs.length ? ['--mcp-config', ...mcpArgs] : []),
   '--strict-mcp-config', '--dangerously-skip-permissions', '-p', prompt,

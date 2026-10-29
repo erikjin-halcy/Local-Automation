@@ -54,6 +54,12 @@ service cloud.firestore {
     match /files/{id} {
       allow read: if isOwner() || isAgent();
       allow write: if isAgent();
+      // Ägaren får bocka av checklistor: bara innehållet ändras och längden är densamma
+      allow update: if isOwner()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content'])
+        && resource.data.content is string
+        && request.resource.data.content is string
+        && request.resource.data.content.size() == resource.data.content.size();
     }
     match /taskState/{name} {
       allow read: if isOwner() || isAgent();
