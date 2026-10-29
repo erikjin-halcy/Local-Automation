@@ -1,0 +1,9 @@
+{
+  "name": "Local Automation",
+  "short_name": "Automation",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f6f4",
+  "theme_color": "#c96442",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

@@ -4,3 +4,9 @@ work/*
 !work/.gitkeep
 data/*
 !data/.gitkeep
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+agent/node_modules/

@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Local Automation</title>
+<meta name="theme-color" content="#c96442">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Automation">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<script>window.CLOUD_MODE = !['localhost', '127.0.0.1'].includes(location.hostname);</script>
 <style>
   :root {
     --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e3e2dd;
@@ -75,6 +81,10 @@
   .empty { color: var(--muted); padding: 24px 4px; }
   h2 { font-size: 18px; margin: 0 0 16px; }
 
+  .login { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 10; padding: 16px; }
+  .login .card { max-width: 360px; width: 100%; text-align: center; }
+  .login .card button { width: 100%; margin-top: 12px; }
+  .task .sub.bad { color: var(--bad); }
   #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100vw - 32px); white-space: pre-wrap; }
   #toast.show { opacity: 1; }
   #toast.bad { background: var(--bad); color: #fff; }
@@ -162,6 +172,7 @@ let openFile = null;
 // ---------- hjälpfunktioner ----------
 
 async function call(method, url, body) {
+  if (window.cloudCall) return window.cloudCall(method, url, body);
   const res = await fetch(API + url, {
     method,
     headers: { 'x-local-ui': '1', ...(body ? { 'Content-Type': 'application/json' } : {}) },
@@ -264,7 +275,10 @@ async function loadStatus() {
   const pills = document.getElementById('pills');
   try {
     const s = await call('GET', '/status');
-    pills.replaceChildren(
+    const agent = 'agentOnline' in s
+      ? [pill(s.agentOnline, s.agentOnline ? 'Macen online' : `Macen offline${s.lastSeen ? ' sedan ' + fmtTime(s.lastSeen) : ''}`)]
+      : [];
+    pills.replaceChildren(...agent,
       pill(s.docker, s.docker ? 'Docker igång' : 'Docker av (startas vid körning)', !s.docker && 'off'),
       pill(s.image, s.image ? 'Image byggd' : 'Image byggs vid första körning', !s.image && 'off'),
       pill(s.token, s.token ? 'Token finns' : 'Token saknas i .env'),
@@ -291,7 +305,9 @@ async function loadTasks() {
       el('span', { class: 'dot ' + st.cls }),
       el('span', {},
         el('div', { class: 'name' }, t.name),
-        el('div', { class: 'sub' }, (t.enabled ? describe(t.schedule) : 'Avstängd') + (t.lastRun ? ' · ' + fmtTime(t.lastRun.start) : ''))));
+        t.error
+          ? el('div', { class: 'sub bad' }, 'Fel: ' + t.error)
+          : el('div', { class: 'sub' }, (t.enabled ? describe(t.schedule) : 'Avstängd') + (t.lastRun ? ' · ' + fmtTime(t.lastRun.start) : ''))));
   }));
 }
 
@@ -491,10 +507,17 @@ async function refresh() {
   }
 }
 
-document.getElementById('new-btn').onclick = () => select('');
-call('GET', '/mcp').then(list => { mcpServers = list; if (selected != null) renderEditor(); }).catch(() => {});
-refresh();
-setInterval(refresh, 4000);
+function start() {
+  document.getElementById('new-btn').onclick = () => select('');
+  call('GET', '/mcp').then(list => { mcpServers = list; if (selected != null) renderEditor(); }).catch(() => {});
+  refresh();
+  setInterval(refresh, 4000);
+}
+
+// I molnläget startar cloud.js appen efter inloggning
+if (window.CLOUD_MODE) window.startApp = start;
+else start();
 </script>
+<script type="module" src="cloud.js"></script>
 </body>
 </html>

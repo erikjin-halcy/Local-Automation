@@ -1,0 +1,59 @@
+rules_version = '2';
+
+// Genereras av agent/setup.sh från firestore.rules.template.
+// Ägaren (Google-inloggning) hanterar uppgifter och läser resultat.
+// Agenten på Macen (e-post/lösenord) speglar uppgifter och laddar upp resultat.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner() {
+      return request.auth != null
+        && request.auth.token.email == 'erikjin.123@gmail.com'
+        && request.auth.token.email_verified == true
+        && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+    function isAgent() {
+      return request.auth != null && request.auth.uid == 'LvpG87pKaDfaMcTQIu7UoQbqZwk2';
+    }
+    function validTask(d) {
+      return d.keys().hasOnly(['schedule', 'enabled', 'mcp', 'prompt', 'renamedFrom', 'updatedAt'])
+        && d.schedule is string && d.schedule.size() > 0 && d.schedule.size() < 100
+        && d.enabled is bool
+        && d.mcp is list && d.mcp.size() <= 10
+        && d.prompt is string && d.prompt.size() > 0 && d.prompt.size() < 50000;
+    }
+
+    match /tasks/{name} {
+      allow read: if isOwner() || isAgent();
+      allow create, update: if (isOwner() || isAgent())
+        && name.matches('^[A-Za-z0-9_-]+$') && validTask(request.resource.data);
+      allow delete: if isOwner() || isAgent();
+    }
+
+    match /runRequests/{id} {
+      allow read: if isOwner() || isAgent();
+      allow create: if isOwner()
+        && request.resource.data.keys().hasOnly(['task', 'status', 'createdAt'])
+        && request.resource.data.status == 'pending'
+        && request.resource.data.task is string;
+      allow update, delete: if isAgent();
+    }
+
+    // Skrivs bara av agenten: körningar, filer, status per uppgift och agentens status
+    match /runs/{id} {
+      allow read: if isOwner() || isAgent();
+      allow write: if isAgent();
+    }
+    match /files/{id} {
+      allow read: if isOwner() || isAgent();
+      allow write: if isAgent();
+    }
+    match /taskState/{name} {
+      allow read: if isOwner() || isAgent();
+      allow write: if isAgent();
+    }
+    match /agent/{id} {
+      allow read: if isOwner() || isAgent();
+      allow write: if isAgent();
+    }
+  }
+}

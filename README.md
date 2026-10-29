@@ -40,6 +40,29 @@ Webbsidan pratar bara med `/api`. För att flytta gränssnittet till webben:
    kör-begäranden från molnet och skickar tillbaka loggar. Macen tar aldrig
    emot inkommande anslutningar.
 
+## Molnversion (Firebase)
+
+Webbappen **https://root-beacon-513108-u8.web.app** fungerar från mobilen. Logga in
+med Google-kontot som äger appen. Jobben körs fortfarande på Macen:
+
+```
+Mobil/webb ──► Firebase (Hosting, Auth, Firestore i europe-north2) ◄── agent/agent.mjs på Macen
+```
+
+- Agenten ansluter bara utåt. Den speglar uppgifter till `tasks/`, startar
+  körningar på begäran och laddar upp status, Claudes svar och textfiler från `work/`.
+- Tokens och `.env` lämnar aldrig Macen. Är Macen avstängd syns det som
+  "Macen offline" och jobben körs inte.
+- När agenten är konfigurerad hanteras uppgifterna i molnet; den lokala sidan
+  kan då bara visa och köra.
+- Åtkomst styrs av `firestore.rules`: bara ägarens Google-konto och agentens konto.
+
+```bash
+./agent/setup.sh din@gmail.com   # engångs: webbapp, agentkonto, regler, deploy
+./agent/install-agent.sh         # starta agenten vid inloggning (--remove för att ta bort)
+npx firebase-tools deploy --only hosting,firestore   # efter ändringar i ui/public eller reglerna
+```
+
 ## Skapa en uppgift
 
 Skapa `tasks/<namn>.md`:

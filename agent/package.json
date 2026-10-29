@@ -1,0 +1,8 @@
+{
+  "name": "local-automation-agent",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "firebase": "11.0.2"
+  }
+}
