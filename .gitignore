@@ -10,3 +10,7 @@ data/*
 firebase-debug.log
 firestore-debug.log
 agent/node_modules/
+
+# Profil med personuppgifter
+profile.json
+profile.md

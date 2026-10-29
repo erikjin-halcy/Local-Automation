@@ -106,11 +106,37 @@
 <div class="layout">
   <aside>
     <button class="primary" id="new-btn">+ Ny uppgift</button>
+    <button id="profile-btn">Min profil</button>
     <div id="task-list"></div>
   </aside>
   <main id="main"><div class="empty">Välj en uppgift eller skapa en ny.</div></main>
 </div>
 <div id="toast"></div>
+
+<template id="profile-tpl">
+  <div class="card">
+    <h2>Min profil</h2>
+    <p class="hint" style="margin-top:-8px">Läggs först i varje uppgift så att Claude vet vem "jag" är.</p>
+    <div class="actions" style="margin-bottom:16px">
+      <button data-detect>Fyll i från kopplade konton</button>
+      <span class="hint" data-detect-hint></span>
+    </div>
+    <label class="field"><span>Namn</span><input type="text" data-f="name" autocomplete="off"></label>
+    <label class="field"><span>E-post (en per rad)</span><textarea data-f="emails" style="min-height:70px"></textarea></label>
+    <div class="row" style="align-items:flex-start">
+      <label class="field" style="flex:1;min-width:160px"><span>Slack-namn</span><input type="text" data-f="slack.name" autocomplete="off"></label>
+      <label class="field" style="flex:1;min-width:140px"><span>Slack-ID</span><input type="text" data-f="slack.id" placeholder="U0…" autocomplete="off"></label>
+      <label class="field" style="flex:1;min-width:140px"><span>Slack-workspace</span><input type="text" data-f="slack.workspace" autocomplete="off"></label>
+    </div>
+    <div class="row" style="align-items:flex-start">
+      <label class="field" style="flex:1;min-width:160px"><span>GitHub-användarnamn</span><input type="text" data-f="github" autocomplete="off"></label>
+      <label class="field" style="flex:1;min-width:160px"><span>Tidszon</span><input type="text" data-f="timezone" placeholder="Asia/Hong_Kong" autocomplete="off"></label>
+    </div>
+    <label class="field"><span>Övrigt (roll, språk, vad Claude bör veta)</span><textarea data-f="notes" style="min-height:90px" placeholder="t.ex. Utvecklare på Halcy. Skriv på svenska."></textarea></label>
+    <label class="field"><span>Det här läggs först i varje prompt</span><pre data-preview style="margin:0"></pre></label>
+    <div class="actions"><button class="primary" data-save>Spara</button></div>
+  </div>
+</template>
 
 <template id="editor-tpl">
   <div class="card">
@@ -314,8 +340,81 @@ async function loadTasks() {
 function select(name) {
   if (dirty && !confirm('Du har osparade ändringar. Vill du lämna dem?')) return;
   selected = name; dirty = false; openRun = null; openFile = null; tab = 'runs';
-  renderEditor();
+  if (name === PROFILE) renderProfile(); else renderEditor();
   loadTasks();
+}
+
+// ---------- profil ----------
+
+const PROFILE = '@profile';
+
+// Samma text som profileText() i ui/lib.mjs
+function profileText(p) {
+  const lines = [];
+  if (p.name) lines.push(`- Namn: ${p.name}`);
+  if (p.emails.length) lines.push(`- E-post: ${p.emails.join(', ')}`);
+  if (p.slack.id || p.slack.name) {
+    const ws = p.slack.workspace ? ` i workspacen ${p.slack.workspace}` : '';
+    const id = p.slack.id ? `, användar-ID ${p.slack.id} (omnämnanden ser ut som <@${p.slack.id}>)` : '';
+    lines.push(`- Slack: ${p.slack.name || 'okänt namn'}${ws}${id}`);
+  }
+  if (p.github) lines.push(`- GitHub: ${p.github}`);
+  if (p.timezone) lines.push(`- Tidszon: ${p.timezone}. Ange tider i den tidszonen.`);
+  if (p.notes) lines.push(`- Övrigt: ${p.notes}`);
+  if (!lines.length) return '(tom profil – inget läggs till)';
+  return `Du arbetar åt den här personen. "Jag", "mig" och "min" i uppgiften syftar på hen:\n${lines.join('\n')}`;
+}
+
+async function renderProfile() {
+  const main = document.getElementById('main');
+  let data;
+  try { data = await call('GET', '/profile'); } catch (e) { return toast(e.message, true); }
+  if (selected !== PROFILE) return;
+  const frag = document.getElementById('profile-tpl').content.cloneNode(true);
+  main.replaceChildren(frag);
+  const q = s => main.querySelector(s);
+  const fields = [...main.querySelectorAll('[data-f]')];
+
+  const fill = p => {
+    for (const f of fields) {
+      const [a, b] = f.dataset.f.split('.');
+      const v = b ? p?.[a]?.[b] : p?.[a];
+      f.value = Array.isArray(v) ? v.join('\n') : (v || '');
+    }
+  };
+  const read = () => {
+    const p = { slack: {} };
+    for (const f of fields) {
+      const [a, b] = f.dataset.f.split('.');
+      const v = a === 'emails' ? f.value.split(/[\n,]/).map(x => x.trim()).filter(Boolean) : f.value.trim();
+      if (b) p[a][b] = v; else p[a] = v;
+    }
+    return p;
+  };
+  const preview = () => { q('[data-preview]').textContent = profileText(read()); };
+
+  fill(data.profile || data.detected || {});
+  preview();
+  fields.forEach(f => f.addEventListener('input', () => { dirty = true; preview(); }));
+
+  const d = data.detected;
+  q('[data-detect-hint]').textContent = d
+    ? `Hittade: ${[d.name, d.github && 'GitHub', d.slack?.id && 'Slack', d.emails?.length && `${d.emails.length} e-post`].filter(Boolean).join(', ')}`
+    : 'Inget hittat än (Macen måste vara online).';
+  q('[data-detect]').disabled = !d;
+  q('[data-detect]').onclick = () => {
+    const cur = read();
+    // Behåll det du själv skrivit i Övrigt och slå ihop e-postadresserna
+    fill({ ...d, emails: [...new Set([...(cur.emails || []), ...(d.emails || [])])], notes: cur.notes || d.notes });
+    dirty = true; preview();
+  };
+
+  q('[data-save]').onclick = async e => {
+    const btn = e.currentTarget; btn.disabled = true;
+    try { await call('PUT', '/profile', read()); dirty = false; toast('Profilen sparad'); }
+    catch (err) { toast(err.message, true); }
+    btn.disabled = false;
+  };
 }
 
 function renderEditor() {
@@ -509,6 +608,7 @@ async function refresh() {
 
 function start() {
   document.getElementById('new-btn').onclick = () => select('');
+  document.getElementById('profile-btn').onclick = () => select(PROFILE);
   call('GET', '/mcp').then(list => { mcpServers = list; if (selected != null) renderEditor(); }).catch(() => {});
   refresh();
   setInterval(refresh, 4000);

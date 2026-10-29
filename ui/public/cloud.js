@@ -18,7 +18,7 @@ if (window.CLOUD_MODE) {
 
   const NAME_RE = /^[A-Za-z0-9_-]+$/;
   const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
-  const store = { tasks: new Map(), state: new Map(), agent: null, runs: new Map(), files: new Map() };
+  const store = { tasks: new Map(), state: new Map(), agent: null, profile: null, runs: new Map(), files: new Map() };
   const subs = { runs: null, files: null };
 
   // Samma regler som install.sh --check
@@ -128,6 +128,20 @@ if (window.CLOUD_MODE) {
       };
     }
     if (parts[0] === 'mcp') return store.agent?.mcp || [];
+    if (parts[0] === 'profile') {
+      if (method === 'GET') return { profile: store.profile, detected: store.agent?.detected || null };
+      const str = v => (typeof v === 'string' ? v.trim() : '');
+      await F.setDoc(F.doc(db, 'profile', 'me'), {
+        name: str(body.name),
+        emails: (body.emails || []).map(str).filter(Boolean).slice(0, 10),
+        slack: { id: str(body.slack?.id), name: str(body.slack?.name), workspace: str(body.slack?.workspace) },
+        github: str(body.github),
+        timezone: str(body.timezone),
+        notes: str(body.notes).slice(0, 4000),
+        updatedAt: F.serverTimestamp(),
+      });
+      return { ok: true };
+    }
     if (parts[0] === 'check-schedule') {
       const err = checkSchedule(u.searchParams.get('s'));
       return { ok: !err, error: err };
@@ -239,6 +253,12 @@ if (window.CLOUD_MODE) {
         if (c === 'tasks') store.tasks = new Map(snap.docs.map(d => [d.id, d.data()]));
         else if (c === 'taskState') store.state = new Map(snap.docs.map(d => [d.id, d.data()]));
         else store.agent = snap.docs.find(d => d.id === 'status')?.data() || null;
+        resolve();
+      }, reject);
+    }));
+    firsts.push(new Promise((resolve, reject) => {
+      F.onSnapshot(F.doc(db, 'profile', 'me'), d => {
+        if (d.exists()) { const { updatedAt, ...p } = d.data(); store.profile = p; }
         resolve();
       }, reject);
     }));

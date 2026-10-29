@@ -224,3 +224,85 @@ export async function cloudManaged() {
   const env = await fs.readFile(path.join(ROOT, '.env'), 'utf8').catch(() => '');
   return /^FIREBASE_AGENT_EMAIL=\S+/m.test(env);
 }
+
+// ---------- profil: vem Claude arbetar åt ----------
+// profile.json är källan, profile.md är texten som run.sh lägger först i varje prompt.
+// Båda innehåller personuppgifter och ligger därför i .gitignore.
+
+export const PROFILE_JSON = path.join(ROOT, 'profile.json');
+export const PROFILE_MD = path.join(ROOT, 'profile.md');
+
+export function cleanProfile(p = {}) {
+  const str = (v, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+  return {
+    name: str(p.name),
+    emails: (Array.isArray(p.emails) ? p.emails : []).map(e => str(e)).filter(Boolean).slice(0, 10),
+    slack: { id: str(p.slack?.id, 40), name: str(p.slack?.name), workspace: str(p.slack?.workspace) },
+    github: str(p.github, 100),
+    timezone: str(p.timezone, 60),
+    notes: str(p.notes, 4000),
+  };
+}
+
+export function profileText(p) {
+  const lines = [];
+  if (p.name) lines.push(`- Namn: ${p.name}`);
+  if (p.emails.length) lines.push(`- E-post: ${p.emails.join(', ')}`);
+  if (p.slack.id || p.slack.name) {
+    const ws = p.slack.workspace ? ` i workspacen ${p.slack.workspace}` : '';
+    const id = p.slack.id ? `, användar-ID ${p.slack.id} (omnämnanden ser ut som <@${p.slack.id}>)` : '';
+    lines.push(`- Slack: ${p.slack.name || 'okänt namn'}${ws}${id}`);
+  }
+  if (p.github) lines.push(`- GitHub: ${p.github}`);
+  if (p.timezone) lines.push(`- Tidszon: ${p.timezone}. Ange tider i den tidszonen.`);
+  if (p.notes) lines.push(`- Övrigt: ${p.notes}`);
+  if (!lines.length) return '';
+  return `Du arbetar åt den här personen. "Jag", "mig" och "min" i uppgiften syftar på hen:\n${lines.join('\n')}\n`;
+}
+
+export async function readProfile() {
+  try { return cleanProfile(JSON.parse(await fs.readFile(PROFILE_JSON, 'utf8'))); } catch { return null; }
+}
+
+export async function writeProfile(p) {
+  const clean = cleanProfile(p);
+  await fs.writeFile(PROFILE_JSON, JSON.stringify(clean, null, 2) + '\n');
+  await fs.writeFile(PROFILE_MD, profileText(clean));
+  return clean;
+}
+
+// Hämtar identiteten från de tokens som finns i .env (GitHub, Slack, Google)
+let detected = null;
+let detectedAt = 0;
+
+export async function detectIdentity() {
+  if (detected && Date.now() - detectedAt < 10 * 60_000) return detected;
+  const text = await fs.readFile(path.join(ROOT, '.env'), 'utf8').catch(() => '');
+  const env = Object.fromEntries(text.split('\n').map(l => l.match(/^([A-Z0-9_]+)=(.+)$/)).filter(Boolean).map(m => [m[1], m[2].trim()]));
+  const get = async (url, token) => {
+    try {
+      const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(8000) });
+      return await r.json();
+    } catch { return {}; }
+  };
+  const out = { name: '', emails: [], slack: { id: '', name: '', workspace: '' }, github: '', timezone: '' };
+  out.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  for (const k of ['GOOGLE_EMAIL', 'GOOGLE_WORK_EMAIL']) if (env[k]) out.emails.push(env[k]);
+  if (env.GITHUB_PAT) {
+    const u = await get('https://api.github.com/user', env.GITHUB_PAT);
+    if (u.login) { out.github = u.login; out.name ||= u.name || ''; }
+  }
+  if (env.SLACK_XOXP) {
+    const a = await get('https://slack.com/api/auth.test', env.SLACK_XOXP);
+    if (a.ok) {
+      const u = await get(`https://slack.com/api/users.info?user=${encodeURIComponent(a.user_id)}`, env.SLACK_XOXP);
+      const pr = u.user?.profile || {};
+      out.slack = { id: a.user_id, name: pr.real_name || pr.display_name || a.user || '', workspace: a.team || '' };
+      out.name ||= out.slack.name;
+      if (pr.email && !out.emails.includes(pr.email)) out.emails.push(pr.email);
+    }
+  }
+  detected = cleanProfile(out);
+  detectedAt = Date.now();
+  return detected;
+}

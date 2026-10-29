@@ -17,6 +17,7 @@ import { firebaseConfig } from '../ui/public/firebase-config.js';
 import {
   ROOT, TASKS, WORK, LOGS, NAME_RE, parseTask, serializeTask, listMcp, exists, isRunning, listRuns,
   checkSchedule, syncSchedules, startRun, status, listFiles, validInput, validMcp, renameTask,
+  readProfile, writeProfile, detectIdentity, cleanProfile,
 } from '../ui/lib.mjs';
 
 const RUN_KEEP = 20;            // antal senaste körningar per uppgift som laddas upp
@@ -245,7 +246,8 @@ async function scan() {
 async function heartbeat() {
   try {
     await setDoc(doc(db, 'agent', 'status'), {
-      ...await status(), mcp: await listMcp(), host: os.hostname(), lastSeen: serverTimestamp(),
+      ...await status(), mcp: await listMcp(), detected: await detectIdentity(),
+      host: os.hostname(), lastSeen: serverTimestamp(),
     });
     // Städa bort hanterade körbegäranden äldre än en timme
     const old = await getDocs(query(collection(db, 'runRequests'), where('status', 'in', ['started', 'rejected'])));
@@ -256,6 +258,22 @@ async function heartbeat() {
   } catch (e) {
     log('fel vid statusuppdatering:', e.message);
   }
+}
+
+// ---------- profil: molnet -> profile.json/profile.md ----------
+
+async function handleProfile(snap) {
+  if (!snap.exists()) {
+    // Ingen profil i molnet än: ladda upp den lokala, annars den automatiskt upptäckta
+    const initial = await readProfile() || await detectIdentity();
+    await setDoc(snap.ref, { ...cleanProfile(initial), updatedAt: serverTimestamp() });
+    log('laddade upp profil');
+    return;
+  }
+  const { updatedAt, ...p } = snap.data();
+  const before = JSON.stringify(await readProfile());
+  const after = await writeProfile(p);
+  if (JSON.stringify(after) !== before) log('uppdaterade profil');
 }
 
 // ---------- start ----------
@@ -271,6 +289,8 @@ for (const d of (await getDocs(collection(db, 'files'))).docs) {
 }
 for (const name of await localTaskNames()) filesDirty.add(name);
 
+onSnapshot(doc(db, 'profile', 'me'), snap => enqueue(() => handleProfile(snap)),
+  e => log('fel i profillyssnare:', e.message));
 onSnapshot(collection(db, 'tasks'), snap => enqueue(() => handleTasks(snap)),
   e => log('fel i uppgiftslyssnare:', e.message));
 onSnapshot(query(collection(db, 'runRequests'), where('status', '==', 'pending')), snap => {

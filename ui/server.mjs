@@ -11,7 +11,7 @@ import {
   ROOT, TASKS, LOGS, WORK, NAME_RE, RUN_RE, MAX_FILE,
   parseTask, serializeTask, listMcp, exists, isRunning, listRuns, readTask, listTasks,
   checkSchedule, syncSchedules, startRun, status, listFiles, safeWorkPath,
-  validInput, validMcp, renameTask, cloudManaged,
+  validInput, validMcp, renameTask, cloudManaged, readProfile, writeProfile, detectIdentity,
 } from './lib.mjs';
 
 const PUBLIC = path.join(ROOT, 'ui', 'public');
@@ -70,6 +70,14 @@ async function api(req, res, parts, url) {
   if (parts.length === 1 && parts[0] === 'check-schedule' && m === 'GET') {
     const r = await checkSchedule(url.searchParams.get('s') || '');
     return send(res, 200, { ok: r.ok, error: r.ok ? null : r.out });
+  }
+
+  if (parts.length === 1 && parts[0] === 'profile') {
+    if (m === 'GET') return send(res, 200, { profile: await readProfile(), detected: await detectIdentity() });
+    if (m === 'PUT') {
+      if (await cloudManaged()) return fail(res, 409, 'Profilen hanteras i webbappen i molnet. Ändra den där.');
+      return send(res, 200, { profile: await writeProfile(await readJson(req)) });
+    }
   }
 
   if (parts[0] !== 'tasks') return fail(res, 404, 'okänd adress');

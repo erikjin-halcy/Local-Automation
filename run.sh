@@ -13,6 +13,11 @@ FILE="$DIR/tasks/$TASK.md"
 
 PROMPT="$(task_prompt "$FILE")"
 [[ -n "${PROMPT//[[:space:]]/}" ]] || { echo "Uppgiften $TASK har ingen prompt" >&2; exit 1; }
+# Profilen (vem Claude arbetar åt) läggs först i varje prompt
+[[ -s "$DIR/profile.md" ]] && PROMPT="$(cat "$DIR/profile.md")
+
+Uppgift:
+$PROMPT"
 
 # mcp: github, slack:write  ->  /mcp/github.read.json /mcp/slack.write.json
 MCP_ARGS=()
