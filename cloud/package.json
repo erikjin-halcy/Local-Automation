@@ -1,0 +1,9 @@
+{
+  "name": "local-automation-cloud",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "firebase-admin": "^13.0.0",
+    "google-auth-library": "^9.15.0"
+  }
+}

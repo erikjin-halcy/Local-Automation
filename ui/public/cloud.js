@@ -5,8 +5,9 @@
 
 if (window.CLOUD_MODE) {
   const V = '11.0.2';
-  const [{ firebaseConfig }, { initializeApp }, A, F] = await Promise.all([
+  const [{ firebaseConfig }, { apiUrl }, { initializeApp }, A, F] = await Promise.all([
     import('./firebase-config.js'),
+    import('./cloud-config.js'),
     import(`https://www.gstatic.com/firebasejs/${V}/firebase-app.js`),
     import(`https://www.gstatic.com/firebasejs/${V}/firebase-auth.js`),
     import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`),
@@ -76,7 +77,27 @@ if (window.CLOUD_MODE) {
     };
   }
 
+  // Anrop till Cloud Run-API:t (cloud/api.mjs) med inloggningens ID-token
+  async function api(path, body) {
+    const res = await fetch(apiUrl + path, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await auth.currentUser.getIdToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    return data;
+  }
+
+  // Efter ändringar av uppgifter: uppdatera Cloud Scheduler
+  async function sync() {
+    if (store.agent?.mode !== 'cloud') return;
+    try { await api('/sync'); }
+    catch (e) { throw new Error(`Sparat, men schemat kunde inte uppdateras: ${e.message}`); }
+  }
+
   const agentOnline = () => {
+    if (store.agent?.mode === 'cloud') return true;
     const ms = store.agent?.lastSeen?.toMillis?.();
     return !!ms && Date.now() - ms < 3 * 60_000;
   };
@@ -100,6 +121,7 @@ if (window.CLOUD_MODE) {
   }
 
   async function requestRun(name) {
+    if (store.agent?.mode === 'cloud') return api('/run', { task: name });
     if (!agentOnline()) throw new Error('Macen är offline, så uppgiften kan inte startas nu');
     const ref = await F.addDoc(F.collection(db, 'runRequests'), {
       task: name, status: 'pending', createdAt: F.serverTimestamp(),
@@ -123,6 +145,7 @@ if (window.CLOUD_MODE) {
     if (parts[0] === 'status') {
       const a = store.agent || {};
       return {
+        mode: a.mode || 'mac',
         docker: !!a.docker, image: !!a.image, token: !!a.token,
         agentOnline: agentOnline(), lastSeen: a.lastSeen?.toDate?.().toISOString() || null,
       };
@@ -140,6 +163,7 @@ if (window.CLOUD_MODE) {
         notes: str(body.notes).slice(0, 4000),
         updatedAt: F.serverTimestamp(),
       });
+      if (store.agent?.mode === 'cloud') await sync();
       return { ok: true };
     }
     if (parts[0] === 'check-schedule') {
@@ -156,6 +180,7 @@ if (window.CLOUD_MODE) {
         const err = validate(body);
         if (err) throw new Error(err);
         await F.setDoc(F.doc(db, 'tasks', body.name), taskData(body));
+        await sync();
         return { task: { name: body.name } };
       }
     }
@@ -181,10 +206,12 @@ if (window.CLOUD_MODE) {
           batch.delete(F.doc(db, 'tasks', name));
           await batch.commit();
         }
+        await sync();
         return { task: { name: to } };
       }
       if (method === 'DELETE') {
         await F.deleteDoc(F.doc(db, 'tasks', name));
+        await sync();
         return { deleted: name };
       }
     }

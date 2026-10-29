@@ -4,9 +4,9 @@
       "command": "workspace-mcp",
       "args": [
         "--single-user",
-        "--tools",
-        "gmail",
-        "calendar"
+        "--permissions",
+        "gmail:readonly",
+        "calendar:full"
       ],
       "env": {
         "GOOGLE_OAUTH_CLIENT_ID": "${GOOGLE_OAUTH_CLIENT_ID}",
