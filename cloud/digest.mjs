@@ -1,8 +1,9 @@
 // Morgonmejlet: körs av Cloud Run-jobbet med MODE=digest (se runner.mjs).
 //  1. hämtar de senaste rapporterna från jobben som är markerade "Ta med i morgonmejlet"
 //     (är inget jobb markerat tas alla påslagna jobb med)
-//  2. låter Claude skriva en kort sammanfattning överst (utan MCP-servrar och utan tokens);
-//     under den följer rapporterna i sin helhet
+//  2. låter Claude kontrollera varje att göra-punkt mot läget nu (Linear, Slack, Gmail och
+//     kalendern, bara läsbehörighet) och skriva en kort sammanfattning överst; under den följer
+//     rapporterna i sin helhet. Punkter som redan är gjorda bockas av, även i webbappen.
 //  3. sparar mejlet i digests/<datum> och ber API-tjänsten skicka det (cloud/api.mjs,
 //     cloud/mail.mjs); den skickar bara till ägaren och har den enda Gmail-token som kan skicka
 
@@ -20,6 +21,17 @@ const MAX_AGE_MS = 20 * 3600_000;   // rapporter från det senaste dygnet
 const MAX_REPORT = 60_000;
 const MAX_RUNS_PER_DAY = 5;
 const WAIT_MS = 20 * 60_000;     // så länge mejlet väntar på jobb som fortfarande körs
+const DATA = '/data';
+// "- [ ] text" eller "1. [x] text": prefix, bock, avslut, text (samma som i ui/server.mjs)
+const TODO_RE = /^(\s*(?:[-*+]|\d+[.)])\s+\[)([ xX])(\]\s+)(.*)$/;
+// Läsverktyg för att kontrollera vad som redan är gjort, och variablerna de behöver
+const CHECK_MCP = [
+  ['linear', ['LINEAR_API_KEY']],
+  ['slack', ['SLACK_XOXP']],
+  ['google-work', ['GOOGLE_WORK_EMAIL', 'GOOGLE_OAUTH_CLIENT_ID']],
+  ['google', ['GOOGLE_EMAIL', 'GOOGLE_OAUTH_CLIENT_ID']],
+];
+const CHECK_ENV = ['LINEAR_API_KEY', 'SLACK_XOXP', 'GOOGLE_EMAIL', 'GOOGLE_WORK_EMAIL', 'GOOGLE_OAUTH_CLIENT_ID', 'GOOGLE_OAUTH_CLIENT_SECRET'];
 
 if (!API_URL) { console.error('API_URL saknas'); process.exit(2); }
 
@@ -73,15 +85,9 @@ try {
     const full = path.join(WORK, 'rapporter', task, path.basename(f.path));
     await fs.mkdir(path.dirname(full), { recursive: true });
     await fs.writeFile(full, f.content.slice(0, MAX_REPORT));
-    sources.push({ task, path: f.path, modified: f.modified });
+    sources.push({ task, path: f.path, modified: f.modified, content: f.content });
   }
   console.log(`rapporter: ${sources.map(s => `${s.task}/${s.path}`).join(', ') || 'inga'}`);
-
-  // Rapporterna i sin helhet, med rubrikerna två nivåer ned så att de hamnar under jobbets rubrik
-  const reports = (await Promise.all(sources.map(async s => {
-    const text = await fs.readFile(path.join(WORK, 'rapporter', s.task, path.basename(s.path)), 'utf8');
-    return `## ${s.task}\n\n${text.replace(/^(#{1,4}) /gm, '$1## ')}`;
-  }))).join('\n\n---\n\n');
 
   // ---------- Claude sammanfattar ----------
   let summary = '';
@@ -98,11 +104,22 @@ try {
       '2. **I korthet**: 2–3 meningar om läget i övrigt.\n' +
       '3. **Dagens schema**: möten och fokusblock med tider, om det finns i rapporterna.\n' +
       '4. **Att göra**: en samlad checklista (`- [ ] …`) över allt som kräver åtgärd, i prioritetsordning. Slå ihop dubbletter och ange källa i slutet av varje punkt, t.ex. (Slack #dev), (jobbmejl), (Linear HAL-123).\n' +
+      '5. **Redan klart** (sist, bara om något): en kort lista över punkter från rapporterna som du såg var gjorda, med vad som visade det.\n\n' +
+      'Kontrollera först, innan du skriver: rapporterna kan vara inaktuella. Gå igenom varje punkt i rapporternas checklistor (`- [ ]`) ' +
+      'och kontrollera med verktygen om den redan är gjord. Exempel: Linear-ärendet är klart eller stängt, eller inbjudan är accepterad (jag är medlem); ' +
+      'jag har svarat i Slack-tråden eller kanalen efter frågan; jag har svarat på mejlet; mötet är redan bokat. ' +
+      'Punkter som är avbockade (`- [x]`) är redan klara. Ta inte med gjorda punkter under Prioritera i dag eller Att göra. ' +
+      'Är du osäker, låt punkten vara kvar. Du får bara läsa: ändra, skicka eller svara inte på något.\n' +
+      'Skriv också /work/klara.json: en JSON-lista med den exakta texten efter `- [ ] ` för varje punkt i rapporterna som är gjord, t.ex. ["Acceptera Ellens Linear-inbjudan (jobbmejl)"].\n' +
       '\nHögst cirka 250 ord. Skriv datum som ÅÅÅÅ-MM-DD (t.ex. 2026-10-30), aldrig som "29 okt". Behåll länkar. Ta bara med sådant som står i rapporterna och hitta inte på något. Ingen hälsningsfras eller signatur.';
-    // Claude får inga tokens: bara det som behövs för att köra
-    const env = { PATH: process.env.PATH, HOME: process.env.HOME, TZ: process.env.TZ, CLAUDE_CODE_OAUTH_TOKEN: process.env.CLAUDE_CODE_OAUTH_TOKEN };
+    // Claude får bara läsverktygen (alla tokens är skrivskyddade); ingen token kan skicka mejl
+    const mcp = await checkMcp();
+    console.log(`kontrollerar med: ${mcp.map(m => path.basename(m)).join(', ') || 'inga verktyg'}`);
+    const env = { PATH: process.env.PATH, HOME: process.env.HOME, TZ: process.env.TZ, MCP_TIMEOUT: '60000',
+      CLAUDE_CODE_OAUTH_TOKEN: process.env.CLAUDE_CODE_OAUTH_TOKEN,
+      ...Object.fromEntries(CHECK_ENV.filter(v => process.env[v]).map(v => [v, process.env[v]])) };
     const exit = await new Promise(resolve => {
-      const child = spawn('claude', ['--strict-mcp-config', '--dangerously-skip-permissions', '-p', prompt],
+      const child = spawn('claude', [...(mcp.length ? ['--mcp-config', ...mcp] : []), '--strict-mcp-config', '--dangerously-skip-permissions', '-p', prompt],
         { cwd: WORK, env, stdio: ['ignore', 'pipe', 'pipe'] });
       const add = b => { log += b.toString(); process.stdout.write(b); };
       child.stdout.on('data', add);
@@ -112,7 +129,12 @@ try {
     });
     summary = await fs.readFile(path.join(WORK, 'morgonmejl.md'), 'utf8').catch(() => '');
     if (exit !== 0 || !summary.trim()) summary = `*Kunde inte sammanfatta (exit ${exit}), rapporterna följer nedan.*`;
+    await markDone(sources);
   }
+
+  // Rapporterna i sin helhet, med rubrikerna två nivåer ned så att de hamnar under jobbets rubrik
+  const reports = sources.map(s => `## ${s.task}\n\n${s.content.slice(0, MAX_REPORT).replace(/^(#{1,4}) /gm, '$1## ')}`)
+    .join('\n\n---\n\n');
   const markdown = reports ? `${summary.trim()}\n\n---\n\n# Rapporterna\n\n${reports}` : summary;
 
   // ---------- skicka ----------
@@ -130,6 +152,50 @@ try {
   console.error(e);
   await ref.set({ status: 'error', error: String(e.message || e), log: log.slice(-20_000), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
   process.exit(1);
+}
+
+// Google-inloggningarna (bara läsbehörighet för Gmail) och de MCP-servrar som går att använda
+async function checkMcp() {
+  for (const [name, emailVar] of [['google', 'GOOGLE_EMAIL'], ['google-work', 'GOOGLE_WORK_EMAIL']]) {
+    const email = process.env[emailVar];
+    if (!email) continue;
+    try {
+      await fs.mkdir(`${DATA}/${name}`, { recursive: true });
+      await fs.writeFile(`${DATA}/${name}/${email}.json`, await fs.readFile(`/secrets/${name}/creds.json`), { mode: 0o600 });
+    } catch { /* kontot är inte inloggat i molnet */ }
+  }
+  const out = [];
+  for (const [name, vars] of CHECK_MCP) {
+    const cfg = `/mcp/${name}.read.json`;
+    if (vars.every(v => process.env[v]) && await fs.access(cfg).then(() => true, () => false)) out.push(cfg);
+  }
+  return out;
+}
+
+// Bockar av punkterna som Claude såg var gjorda, i mejlet och i rapporterna i webbappen.
+// Bara bocken ändras, så längden är densamma och runner.mjs laddar inte upp filen igen.
+async function markDone(sources) {
+  const done = await fs.readFile(path.join(WORK, 'klara.json'), 'utf8').then(JSON.parse, () => []);
+  const norm = t => String(t).trim().replace(/\s+/g, ' ');
+  const set = new Set((Array.isArray(done) ? done : []).map(norm));
+  if (!set.size) return;
+  for (const s of sources) {
+    const lines = s.content.split('\n');
+    let changed = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const m = TODO_RE.exec(lines[i]);
+      if (m && m[2] === ' ' && set.has(norm(m[4]))) { lines[i] = `${m[1]}x${m[3]}${m[4]}`; changed++; }
+    }
+    if (!changed) continue;
+    const content = lines.join('\n');
+    const id = `${s.task}__${Buffer.from(s.path).toString('base64url')}`;
+    await db.runTransaction(async tx => {
+      const cur = (await tx.get(db.doc(`files/${id}`))).data();
+      if (cur?.content === s.content) tx.update(db.doc(`files/${id}`), { content });
+    });
+    s.content = content;
+    console.log(`bockade av ${changed} punkter i ${s.task}/${s.path}`);
+  }
 }
 
 // Skickas av API-tjänsten, som har Gmail-token; körningen (och Claude) har den inte
