@@ -1,0 +1,4 @@
+{
+  "_info": "Ingen MCP-server: notes är filer som synkas av sync/sync.mjs och läggs i /notes vid körning. write-läge.",
+  "mcpServers": {}
+}

@@ -35,7 +35,7 @@ export function parseTask(text) {
       body = lines.slice(end + 1).join('\n');
     }
   }
-  return { schedule: fields.schedule || '', enabled: fields.enabled === 'true', mcp: parseMcp(fields.mcp), prompt: body.trim() };
+  return { schedule: fields.schedule || '', enabled: fields.enabled === 'true', digest: fields.digest === 'true', mcp: parseMcp(fields.mcp), prompt: body.trim() };
 }
 
 // "github, slack:write" -> [{ name: 'github', level: 'read' }, { name: 'slack', level: 'write' }]
@@ -44,9 +44,10 @@ export function parseMcp(s) {
     .map(x => ({ name: x.split(':')[0], level: x.endsWith(':write') ? 'write' : 'read' }));
 }
 
-export function serializeTask({ schedule, enabled, mcp, prompt }) {
+export function serializeTask({ schedule, enabled, digest, mcp, prompt }) {
   const mcpLine = mcp.length ? `mcp: ${mcp.map(m => m.level === 'write' ? `${m.name}:write` : m.name).join(', ')}\n` : '';
-  return `---\nschedule: ${schedule}\nenabled: ${enabled ? 'true' : 'false'}\n${mcpLine}---\n${prompt.trim()}\n`;
+  const digestLine = digest ? 'digest: true\n' : '';
+  return `---\nschedule: ${schedule}\nenabled: ${enabled ? 'true' : 'false'}\n${digestLine}${mcpLine}---\n${prompt.trim()}\n`;
 }
 
 // Tillgängliga MCP-servrar i mcp/ och vilka variabler i .env de behöver

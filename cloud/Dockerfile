@@ -10,10 +10,10 @@ RUN uv tool install workspace-mcp && chmod -R a+rX /opt/uv-tools /opt/uv-python
 WORKDIR /app
 COPY cloud/package.json ./
 RUN npm install --omit=dev --no-fund --no-audit
-COPY cloud/runner.mjs cloud/api.mjs ./
+COPY cloud/runner.mjs cloud/api.mjs cloud/digest.mjs cloud/mail.mjs ./
 COPY ui/lib.mjs ./lib.mjs
 COPY mcp/*.json /mcp/
-RUN mkdir -p /work /data && chown node:node /work /data
+RUN mkdir -p /work /data /notes /obsidian && chown node:node /work /data /notes /obsidian
 
 # Claude vägrar --dangerously-skip-permissions som root
 USER node

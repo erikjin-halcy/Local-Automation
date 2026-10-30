@@ -14,3 +14,6 @@ agent/node_modules/
 # Profil med personuppgifter
 profile.json
 profile.md
+
+# Egna sökvägar till Obsidian-valv (kopiera sync.example.json)
+sync.json

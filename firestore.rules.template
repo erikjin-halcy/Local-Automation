@@ -15,7 +15,8 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == '__AGENT_UID__';
     }
     function validTask(d) {
-      return d.keys().hasOnly(['schedule', 'enabled', 'mcp', 'prompt', 'renamedFrom', 'updatedAt'])
+      return d.keys().hasOnly(['schedule', 'enabled', 'digest', 'mcp', 'prompt', 'renamedFrom', 'updatedAt'])
+        && (!('digest' in d) || d.digest is bool)
         && d.schedule is string && d.schedule.size() > 0 && d.schedule.size() < 100
         && d.enabled is bool
         && d.mcp is list && d.mcp.size() <= 10
@@ -41,7 +42,7 @@ service cloud.firestore {
     match /profile/{id} {
       allow read: if isOwner() || isAgent();
       allow write: if (isOwner() || isAgent()) && id == 'me'
-        && request.resource.data.keys().hasOnly(['name', 'emails', 'slack', 'github', 'timezone', 'notes', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['name', 'emails', 'slack', 'github', 'timezone', 'notes', 'digest', 'updatedAt'])
         && request.resource.data.emails is list && request.resource.data.emails.size() <= 10
         && request.resource.data.notes is string && request.resource.data.notes.size() <= 4000;
     }
@@ -64,6 +65,10 @@ service cloud.firestore {
     match /taskState/{name} {
       allow read: if isOwner() || isAgent();
       allow write: if isAgent();
+    }
+    // Morgonmejlen skrivs av körningen i molnet (Admin SDK)
+    match /digests/{date} {
+      allow read: if isOwner();
     }
     match /agent/{id} {
       allow read: if isOwner() || isAgent();

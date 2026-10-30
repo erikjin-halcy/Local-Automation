@@ -63,6 +63,7 @@ if (window.CLOUD_MODE) {
   const taskData = b => ({
     schedule: b.schedule.trim(),
     enabled: !!b.enabled,
+    digest: !!b.digest,
     mcp: (b.mcp || []).map(m => ({ name: m.name, level: m.level })),
     prompt: b.prompt,
     updatedAt: F.serverTimestamp(),
@@ -72,7 +73,7 @@ if (window.CLOUD_MODE) {
     const t = store.tasks.get(name);
     const s = store.state.get(name) || {};
     return {
-      name, schedule: t.schedule, enabled: t.enabled, mcp: t.mcp || [], prompt: t.prompt,
+      name, schedule: t.schedule, enabled: t.enabled, digest: !!t.digest, mcp: t.mcp || [], prompt: t.prompt,
       running: !!s.running, lastRun: s.lastRun || null, error: s.error || null,
     };
   }
@@ -184,10 +185,15 @@ if (window.CLOUD_MODE) {
         github: str(body.github),
         timezone: str(body.timezone),
         notes: str(body.notes).slice(0, 4000),
+        digest: { enabled: !!body.digest?.enabled, time: /^([01]\d|2[0-3]):[0-5]\d$/.test(body.digest?.time || '') ? body.digest.time : '07:30' },
         updatedAt: F.serverTimestamp(),
       });
       if (store.agent?.mode === 'cloud') await sync();
       return { ok: true };
+    }
+    if (parts[0] === 'digest' && method === 'POST') {
+      if (store.agent?.mode !== 'cloud') throw new Error('morgonmejlet finns bara i molnläget');
+      return api('/digest');
     }
     if (parts[0] === 'check-schedule') {
       const err = checkSchedule(u.searchParams.get('s'));

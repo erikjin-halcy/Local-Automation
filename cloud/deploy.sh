@@ -16,6 +16,7 @@ REPO=local-automation
 IMAGE="$REGION-docker.pkg.dev/$P/$REPO/claude-runner:latest"
 JOB=claude-task
 SERVICE=la-api
+NOTES_BUCKET="$P-notes"
 G=(gcloud --project "$P" --quiet)
 env_get() { sed -n "s/^$1=//p" .env | head -1; }
 sa() { echo "$1@$P.iam.gserviceaccount.com"; }
@@ -44,24 +45,32 @@ gcloud storage buckets add-iam-policy-binding "$BUCKET" --member "serviceAccount
 "${G[@]}" artifacts repositories add-iam-policy-binding "$REPO" --location "$REGION" --member "serviceAccount:$(sa la-build)" --role roles/artifactregistry.writer >/dev/null
 "${G[@]}" projects add-iam-policy-binding "$P" --member "serviceAccount:$(sa la-build)" --role roles/logging.logWriter --condition None >/dev/null
 
+echo "▶ Bucket för Apple Notes och Obsidian ($NOTES_BUCKET)"
+# Bara ägaren (projektets owner) och körningen kommer åt den; synkas av sync/sync.mjs på Macen
+gcloud storage buckets describe "gs://$NOTES_BUCKET" --project "$P" >/dev/null 2>&1 ||
+  gcloud storage buckets create "gs://$NOTES_BUCKET" --project "$P" --location "$REGION" \
+    --uniform-bucket-level-access --public-access-prevention >/dev/null
+gcloud storage buckets add-iam-policy-binding "gs://$NOTES_BUCKET" --project "$P" \
+  --member "serviceAccount:$(sa la-runner)" --role roles/storage.objectAdmin >/dev/null
+
 echo "▶ Bygger image i Cloud Build (några minuter)"
 "${G[@]}" builds submit --config cloud/cloudbuild.yaml --substitutions "_IMAGE=$IMAGE" \
   --service-account "projects/$P/serviceAccounts/$(sa la-build)" --gcs-source-staging-dir "$BUCKET/source" . >/dev/null
 
 echo "▶ Hemligheter i Secret Manager"
-put_secret() {  # put_secret <namn> <fil>
+put_secret() {  # put_secret <namn> <fil> [servicekonto som får läsa, la-runner som standard]
   "${G[@]}" secrets describe "$1" >/dev/null 2>&1 || "${G[@]}" secrets create "$1" --replication-policy automatic >/dev/null
   local cur new
   cur="$("${G[@]}" secrets versions access latest --secret "$1" 2>/dev/null | shasum | cut -c1-40 || true)"
   new="$(shasum < "$2" | cut -c1-40)"
   [[ "$cur" == "$new" ]] || "${G[@]}" secrets versions add "$1" --data-file "$2" >/dev/null
-  "${G[@]}" secrets add-iam-policy-binding "$1" --member "serviceAccount:$(sa la-runner)" --role roles/secretmanager.secretAccessor >/dev/null
+  "${G[@]}" secrets add-iam-policy-binding "$1" --member "serviceAccount:$(sa "${3:-la-runner}")" --role roles/secretmanager.secretAccessor >/dev/null
 }
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT; chmod 700 "$TMP"
 SECRETS=()
 for pair in CLAUDE_CODE_OAUTH_TOKEN:la-claude-token SLACK_XOXP:la-slack GITHUB_PAT:la-github \
             GOOGLE_OAUTH_CLIENT_ID:la-google-client-id GOOGLE_OAUTH_CLIENT_SECRET:la-google-client-secret \
-            LINEAR_API_KEY:la-linear; do
+            LINEAR_API_KEY:la-linear POSTHOG_API_KEY:la-posthog; do
   var="${pair%%:*}"; name="${pair##*:}"; val="$(env_get "$var")"
   [[ -n "$val" ]] || { echo "  hoppar över $var (tom i .env)"; continue; }
   printf '%s' "$val" > "$TMP/v"; put_secret "$name" "$TMP/v"
@@ -75,11 +84,27 @@ for pair in google:GOOGLE_EMAIL google-work:GOOGLE_WORK_EMAIL; do
   SECRETS+=("/secrets/$dir/creds.json=la-$dir-creds:latest")
 done
 
+# Token som bara får skicka mejl (morgonmejlet). Bara API-tjänsten får läsa den, inte körningen där Claude kör.
+API_SECRETS=()
+f="data/gmail-send/$(env_get GOOGLE_EMAIL).json"
+if [[ -f "$f" ]]; then
+  put_secret la-gmail-send "$f" la-api
+  API_SECRETS+=("/secrets/gmail-send/creds.json=la-gmail-send:latest")
+else
+  echo "  hoppar över morgonmejlets utskick (kör ./mcp/google-login.sh send)"
+fi
+
+API_ARGS=()
+(( ${#API_SECRETS} )) && API_ARGS=(--set-secrets "${(j:,:)API_SECRETS}")
+
+# Tjänstens fasta adress; körningen skickar sitt ID-token till den
+SELF_URL="https://$SERVICE-$("${G[@]}" projects describe "$P" --format 'value(projectNumber)').$REGION.run.app"
+
 echo "▶ Cloud Run Job ($JOB)"
 "${G[@]}" run jobs deploy "$JOB" --region "$REGION" --image "$IMAGE" \
   --service-account "$(sa la-runner)" --tasks 1 --max-retries 0 --task-timeout 1800s \
   --cpu 1 --memory 2Gi \
-  --set-env-vars "GOOGLE_EMAIL=$(env_get GOOGLE_EMAIL),GOOGLE_WORK_EMAIL=$(env_get GOOGLE_WORK_EMAIL)" \
+  --set-env-vars "GOOGLE_EMAIL=$(env_get GOOGLE_EMAIL),GOOGLE_WORK_EMAIL=$(env_get GOOGLE_WORK_EMAIL),NOTES_BUCKET=$NOTES_BUCKET,APP_URL=https://$P.web.app,API_URL=$SELF_URL" \
   --set-secrets "${(j:,:)SECRETS}" >/dev/null
 for a in la-api la-scheduler; do
   "${G[@]}" run jobs add-iam-policy-binding "$JOB" --region "$REGION" \
@@ -90,7 +115,8 @@ echo "▶ Cloud Run-tjänst ($SERVICE)"
 "${G[@]}" run deploy "$SERVICE" --region "$REGION" --image "$IMAGE" \
   --service-account "$(sa la-api)" --command node --args /app/api.mjs \
   --cpu 1 --memory 512Mi --max-instances 2 --no-invoker-iam-check \
-  --set-env-vars "PROJECT=$P,REGION=$REGION,SCHEDULER_REGION=$SCHEDULER_REGION,JOB=$JOB,SCHEDULER_SA=$(sa la-scheduler),OWNER_EMAIL=$OWNER" >/dev/null
+  --set-env-vars "PROJECT=$P,REGION=$REGION,SCHEDULER_REGION=$SCHEDULER_REGION,JOB=$JOB,SCHEDULER_SA=$(sa la-scheduler),OWNER_EMAIL=$OWNER,API_URL=$SELF_URL,RUNNER_SA=$(sa la-runner)" \
+  "${API_ARGS[@]}" >/dev/null
 API_URL="$("${G[@]}" run services describe "$SERVICE" --region "$REGION" --format 'value(status.url)')"
 printf "// Genereras av cloud/deploy.sh\nexport const apiUrl = '%s';\n" "$API_URL" > ui/public/cloud-config.js
 echo "  $API_URL"

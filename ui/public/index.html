@@ -202,6 +202,19 @@
   .md li.todo label { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; padding: 2px 0; }
   .md li.todo input { margin-top: 5px; flex: none; }
   .md li.todo input:checked + span { text-decoration: line-through; color: var(--muted); }
+  .md li.sub1 { margin-left: 22px; list-style-type: circle; } .md li.sub2 { margin-left: 44px; list-style-type: square; } .md li.sub3 { margin-left: 66px; list-style-type: square; }
+  .md li.todo.sub1 { margin-left: 0; } .md li.todo.sub2 { margin-left: 22px; } .md li.todo.sub3 { margin-left: 44px; }
+  .md h2 { padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+  .md h1 + h2, .md > h2:first-child { margin-top: 0; }
+  .md :not(pre) > code { background: var(--line); padding: 1px 5px; border-radius: 4px; }
+  .md del { color: var(--muted); }
+  .md .table { overflow-x: auto; margin: 0 0 14px; }
+  .md table { border-collapse: collapse; font-size: 14px; line-height: 1.45; min-width: 60%; }
+  .md th, .md td { border-bottom: 1px solid var(--line); padding: 6px 12px 6px 0; text-align: left; vertical-align: top; }
+  .md th { font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+  .runhead { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .runhead button { font: 500 12px/1 var(--sans); padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; }
+  .runhead button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-soft-text); border-color: transparent; }
   .todocount { display: inline-block; font: 500 13px/1.5 var(--sans); padding: 4px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-soft-text); margin-bottom: 14px; }
 
   /* ---------- formulär ---------- */
@@ -342,6 +355,13 @@
       <label class="field"><span>Övrigt (roll, språk, vad Claude bör veta)</span><textarea data-f="notes" style="min-height:90px" placeholder="t.ex. Utvecklare på Halcy. Skriv på svenska."></textarea></label>
     </div>
     <div class="card">
+      <h2>Morgonmejl</h2>
+      <label class="switch"><input type="checkbox" data-digest-enabled> Skicka ett sammanfattande mejl till mig varje morgon</label>
+      <div class="sentence">kl <input type="time" data-digest-time aria-label="Tid för morgonmejlet"></div>
+      <div class="hint" style="margin:0">Överst en kort sammanfattning från Claude, därefter de senaste rapporterna i sin helhet från jobben där "Ta med i morgonmejlet" är ibockat (alla påslagna jobb om inget är ibockat). Mejlet skickas till dig själv från ditt privata Gmail-konto. Lägg tiden efter att jobben har körts.</div>
+      <div class="formactions"><button type="button" data-digest-now>Skicka nu</button></div>
+    </div>
+    <div class="card">
       <h2>Det här läggs först i varje prompt</h2>
       <pre data-preview></pre>
     </div>
@@ -385,6 +405,11 @@
       <div class="hint" style="margin:0">Läsa är säkrast. Välj "Läsa + skriva" bara om jobbet ska skicka, posta eller ändra något.</div>
     </section>
     <section class="card">
+      <h2>Morgonmejl</h2>
+      <label class="switch"><input type="checkbox" data-digest> Ta med jobbets senaste rapport i morgonmejlet</label>
+      <div class="hint" style="margin:0">Morgonmejlet innehåller en kort sammanfattning och därefter rapporterna i sin helhet. Är inget jobb markerat tas alla påslagna jobb med. Tid och på/av ställer du in under Min profil.</div>
+    </section>
+    <section class="card">
       <h2>Vad Claude ska göra</h2>
       <textarea data-prompt aria-label="Prompt" placeholder="Vad ska Claude göra? Claude kommer bara åt mappen /work."></textarea>
     </section>
@@ -412,7 +437,7 @@
 <script>
 const API = '/api';
 const DAYS = [['mon', 'mån'], ['tue', 'tis'], ['wed', 'ons'], ['thu', 'tor'], ['fri', 'fre'], ['sat', 'lör'], ['sun', 'sön']];
-const MCP_LABELS = { github: 'GitHub', slack: 'Slack', linear: 'Linear', google: 'Gmail + Kalender (privat)', 'google-work': 'Gmail + Kalender (jobb)' };
+const MCP_LABELS = { github: 'GitHub', slack: 'Slack', linear: 'Linear', posthog: 'PostHog', google: 'Gmail + Kalender (privat)', 'google-work': 'Gmail + Kalender (jobb)', notes: 'Apple Notes', obsidian: 'Obsidian' };
 const TABS = [['results', 'Resultat'], ['runs', 'Körningar och loggar'], ['settings', 'Inställningar']];
 const PLAY = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>';
 
@@ -590,15 +615,24 @@ const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&
 const inline = s => esc(s)
   .replace(/`([^`]+)`/g, '<code>$1</code>')
   .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+  .replace(/~~([^~]+)~~/g, '<del>$1</del>')
   .replace(/(^|[\s(])[*_]([^*_\s][^*_]*)[*_](?=[\s).,:;!?]|$)/g, '$1<em>$2</em>')
   .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
   .replace(/(^|[\s(])(https?:\/\/[^\s<)]*[^\s<).,;:!?])/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
 
 function md(text) {
   // Punkter i en checklista får sitt radnummer så att bocken kan skrivas tillbaka till filen
-  const item = i => i.todo
-    ? `<li class="todo"><label><input type="checkbox" data-line="${i.todo.line}" data-text="${esc(i.todo.text)}"${i.todo.done ? ' checked' : ''}><span>${inline(i.text)}</span></label></li>`
-    : `<li>${inline(i.text)}</li>`;
+  // Indragna punkter (2 mellanslag per nivå) blir underpunkter med klassen sub1–sub3
+  const item = i => {
+    const cls = [i.todo ? 'todo' : '', i.level ? `sub${i.level}` : ''].filter(Boolean).join(' ');
+    const attr = cls ? ` class="${cls}"` : '';
+    return i.todo
+      ? `<li${attr}><label><input type="checkbox" data-line="${i.todo.line}" data-text="${esc(i.todo.text)}"${i.todo.done ? ' checked' : ''}><span>${inline(i.text)}</span></label></li>`
+      : `<li${attr}>${inline(i.text)}</li>`;
+  };
+  // Tabeller: | a | b | följt av |---|---|
+  const cells = l => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+  const isSep = l => /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/.test(l);
   const out = [];
   let para = [], list = null, fence = null;
   const flush = () => {
@@ -619,12 +653,22 @@ function md(text) {
     else if ((m = line.match(/^(#{1,6})\s+(.*)$/))) { flush(); const n = Math.min(m[1].length, 4); out.push(`<h${n}>${inline(m[2])}</h${n}>`); }
     else if (/^\s*(-{3,}|\*{3,})\s*$/.test(line)) { flush(); out.push('<hr>'); }
     else if ((m = line.match(/^>\s?(.*)$/))) { flush(); out.push(`<blockquote>${inline(m[1])}</blockquote>`); }
-    else if ((m = line.match(/^\s*([-*+]|\d+[.)])\s+(.*)$/))) {
-      const tag = /\d/.test(m[1]) ? 'ol' : 'ul';
-      if (para.length || (list && list.tag !== tag)) flush();
-      if (!list) list = { tag, items: [] };
-      const todo = m[2].match(/^\[([ xX])\]\s+(.*)$/);
-      list.items.push(todo ? { text: todo[2], todo: { line: n, text: todo[2], done: todo[1] !== ' ' } } : { text: m[2] });
+    else if (line.includes('|') && isSep(lines[n + 1] || '') && !isSep(line)) {
+      flush();
+      const head = cells(line), rows = [];
+      for (n += 2; n < lines.length && lines[n].includes('|') && lines[n].trim(); n++) rows.push(cells(lines[n]));
+      n--;
+      out.push(`<div class="table"><table><thead><tr>${head.map(c => `<th>${inline(c)}</th>`).join('')}</tr></thead><tbody>${
+        rows.map(r => `<tr>${head.map((_, i) => `<td>${inline(r[i] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
+    }
+    else if ((m = line.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/))) {
+      const tag = /\d/.test(m[2]) ? 'ol' : 'ul';
+      const indent = m[1].replace(/\t/g, '  ').length;
+      if (para.length || (list && list.tag !== tag && indent <= list.indent)) flush();
+      if (!list) list = { tag, items: [], indent };
+      const level = Math.min(3, Math.max(0, Math.floor((indent - list.indent) / 2)));
+      const todo = m[3].match(/^\[([ xX])\]\s+(.*)$/);
+      list.items.push(todo ? { level, text: todo[2], todo: { line: n, text: todo[2], done: todo[1] !== ' ' } } : { level, text: m[3] });
     }
     else if (list && /^\s{2,}\S/.test(line)) list.items[list.items.length - 1].text += ' ' + line.trim();
     else { if (list) flush(); para.push(line.trim()); }
@@ -957,7 +1001,7 @@ async function runNow(t, btn) {
 async function setEnabled(t, enabled, input) {
   if (input) input.disabled = true;
   try {
-    await call('PUT', '/tasks/' + enc(t.name), { name: t.name, schedule: t.schedule, enabled, mcp: t.mcp || [], prompt: t.prompt });
+    await call('PUT', '/tasks/' + enc(t.name), { name: t.name, schedule: t.schedule, enabled, digest: !!t.digest, mcp: t.mcp || [], prompt: t.prompt });
     toast(enabled ? 'Jobbet körs nu enligt schemat' : 'Avstängt – körs bara för hand');
   } catch (err) {
     toast(err.message, true);
@@ -1040,7 +1084,7 @@ async function renderTab(auto = false) {
           })),
         el('div', { class: 'view' },
           el('div', { class: 'meta' }, el('span', {}, `Körning ${fmtTime(run.start)}`), el('span', {}, cap(runState(run).text))),
-          el('pre', {}, log || '(tom logg)'))));
+          runLogView(run, log))));
       return;
     }
 
@@ -1076,6 +1120,27 @@ async function renderTab(auto = false) {
           : /\.(md|markdown)$/i.test(file.path) ? reportView(task, file, content)
           : el('pre', {}, content))));
   } catch (e) { body.replaceChildren(el('div', { class: 'page' }, el('div', { class: 'empty' }, e.message))); }
+}
+
+// En körnings logg: "=== jobb datum ===", Claudes svar och "=== exit N ===". Svaret visas formaterat
+// som standard när körningen lyckades; misslyckade och pågående körningar visas som rå logg.
+const runRaw = {};
+function runLogView(run, log) {
+  const lines = (log || '').split('\n');
+  const start = lines.findLastIndex(l => /^=== .+ ===$/.test(l) && !/^=== exit -?\d+ ===$/.test(l));
+  const end = lines.findLastIndex(l => /^=== exit -?\d+ ===$/.test(l));
+  // Claude CLI:ts egna varningar (t.ex. om stdin) hör inte till svaret
+  const answer = lines.slice(start + 1, end > start ? end : undefined)
+    .filter(l => !/^Warning: no stdin data received/.test(l)).join('\n').trim();
+  const raw = runRaw[run.id] ?? (run.running || run.exit !== 0 || !answer);
+  const toggle = (label, value) => el('button', { type: 'button', 'aria-pressed': String(raw === value),
+    onclick: () => { runRaw[run.id] = value; renderTab(); } }, label);
+  const head = answer ? el('div', { class: 'runhead' }, toggle('Svaret', false), toggle('Hela loggen', true)) : null;
+  if (raw) return el('div', {}, head, el('pre', {}, log || '(tom logg)'));
+  const view = el('div', { class: 'md', html: md(answer) });
+  // Checkboxar i loggen hör inte till någon fil och kan inte bockas av här
+  view.querySelectorAll('input[type=checkbox]').forEach(i => { i.disabled = true; });
+  return el('div', {}, head, view);
 }
 
 // Rapporten som formaterad text. Punkter som "- [ ] ..." blir checkboxar och
@@ -1122,7 +1187,7 @@ function wireTodos(view, task, file, offset = 0) {
 
 function renderSettings(container, t) {
   const isNew = !t;
-  const task = t || { name: '', schedule: 'daily 08:00', enabled: true, mcp: [], prompt: '' };
+  const task = t || { name: '', schedule: 'daily 08:00', enabled: true, digest: false, mcp: [], prompt: '' };
   const frag = document.getElementById('settings-tpl').content.cloneNode(true);
   const $ = s => frag.querySelector(s);
   $('[data-newhead]').hidden = !isNew;
@@ -1131,6 +1196,7 @@ function renderSettings(container, t) {
   $('[data-danger]').hidden = isNew;
   $('[data-name]').value = task.name;
   $('[data-enabled]').checked = task.enabled;
+  $('[data-digest]').checked = !!task.digest;
   $('[data-prompt]').value = task.prompt;
   if (!isNew) $('[data-danger-text]').textContent = `Loggar och filer i work/${task.name} sparas.`;
 
@@ -1190,7 +1256,7 @@ function renderSettings(container, t) {
   syncSchedUi();
   root.querySelectorAll('[data-type], [data-n], [data-unit], [data-time], [data-days] input')
     .forEach(i => i.addEventListener('input', () => { markDirty(); syncSchedUi(); }));
-  root.querySelectorAll('[data-prompt], [data-enabled], [data-mcp] select')
+  root.querySelectorAll('[data-prompt], [data-enabled], [data-digest], [data-mcp] select')
     .forEach(i => i.addEventListener('input', markDirty));
 
   const syncName = () => {
@@ -1211,7 +1277,7 @@ function renderSettings(container, t) {
       .map(s => ({ name: s.dataset.mcpName, level: s.value }));
     // Ett befintligt jobb slås på och av i raden ovanför flikarna
     const enabled = isNew ? q('[data-enabled]').checked : (tasks.find(x => x.name === task.name) || task).enabled;
-    const body = { name: syncName(), schedule: current(), enabled, mcp, prompt: q('[data-prompt]').value };
+    const body = { name: syncName(), schedule: current(), enabled, digest: q('[data-digest]').checked, mcp, prompt: q('[data-prompt]').value };
     try {
       if (!body.name) throw new Error('Ange ett namn');
       if (isNew) await call('POST', '/tasks', body);
@@ -1295,6 +1361,16 @@ async function renderProfile() {
   fill(data.profile || data.detected || {});
   preview();
   fields.forEach(f => f.addEventListener('input', () => { dirty = true; preview(); }));
+  const digest = data.profile?.digest || {};
+  q('[data-digest-enabled]').checked = !!digest.enabled;
+  q('[data-digest-time]').value = digest.time || '07:30';
+  main.querySelectorAll('[data-digest-enabled], [data-digest-time]').forEach(i => i.addEventListener('input', () => { dirty = true; }));
+  q('[data-digest-now]').onclick = async e => {
+    const btn = e.currentTarget; btn.disabled = true;
+    try { await call('POST', '/digest'); toast('Morgonmejlet skickas om någon minut'); }
+    catch (err) { toast(err.message, true); }
+    btn.disabled = false;
+  };
 
   const d = data.detected;
   q('[data-detect-hint]').textContent = d
@@ -1311,7 +1387,7 @@ async function renderProfile() {
   q('[data-save]').onclick = async e => {
     const btn = e.currentTarget; btn.disabled = true;
     try {
-      const p = read();
+      const p = { ...read(), digest: { enabled: q('[data-digest-enabled]').checked, time: q('[data-digest-time]').value } };
       await call('PUT', '/profile', p);
       dirty = false;
       firstName = (p.name || '').split(/\s+/)[0];

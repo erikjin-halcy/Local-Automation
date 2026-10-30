@@ -9,6 +9,7 @@ import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { GoogleAuth, OAuth2Client } from 'google-auth-library';
+import { sendMail } from './mail.mjs';
 
 const PROJECT = process.env.PROJECT;
 const REGION = process.env.REGION;                   // jobbets region
@@ -16,6 +17,9 @@ const SCHEDULER_REGION = process.env.SCHEDULER_REGION;
 const JOB = process.env.JOB;
 const SCHEDULER_SA = process.env.SCHEDULER_SA;
 const OWNER_EMAIL = process.env.OWNER_EMAIL;
+const API_URL = process.env.API_URL;           // den här tjänstens adress, mottagare för körningens ID-token
+const RUNNER_SA = process.env.RUNNER_SA;
+const MAX_MAILS_PER_DAY = 5;
 const ORIGINS = new Set([`https://${PROJECT}.web.app`, `https://${PROJECT}.firebaseapp.com`]);
 const NAME_RE = /^[A-Za-z0-9_-]+$/;
 const PREFIX = 'la-task-';
@@ -33,6 +37,12 @@ async function gapi(method, url, body) {
 
 const runUrl = `https://run.googleapis.com/v2/projects/${PROJECT}/locations/${REGION}/jobs/${JOB}:run`;
 const runBody = task => ({ overrides: { containerOverrides: [{ env: [{ name: 'TASK', value: task }] }] } });
+// Morgonmejlet körs av samma jobb med MODE=digest (cloud/digest.mjs); FORCE skickar även när det är avstängt
+const digestBody = (force = false) => ({ overrides: { containerOverrides: [{ env: [
+  { name: 'MODE', value: 'digest' }, ...(force ? [{ name: 'FORCE', value: '1' }] : []),
+] }] } });
+const DIGEST_JOB = 'la-digest';
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 // ---------- schema -> cron (samma format som install.sh) ----------
 
@@ -114,6 +124,17 @@ async function sync() {
   for (const name of known) if (!tasks.has(name)) { await removeTaskData(name); done.push(`tog bort ${name}`); }
 
   const base = `https://cloudscheduler.googleapis.com/v1/projects/${PROJECT}/locations/${SCHEDULER_REGION}/jobs`;
+  const schedulerJob = (id, description, schedule, body) => ({
+    name: `projects/${PROJECT}/locations/${SCHEDULER_REGION}/jobs/${id}`,
+    description, schedule, timeZone,
+    attemptDeadline: '60s',
+    httpTarget: {
+      uri: runUrl, httpMethod: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: Buffer.from(JSON.stringify(body)).toString('base64'),
+      oauthToken: { serviceAccountEmail: SCHEDULER_SA, scope: 'https://www.googleapis.com/auth/cloud-platform' },
+    },
+  });
   const existing = new Map(((await gapi('GET', `${base}?pageSize=500`)).jobs || [])
     .filter(j => j.name.split('/').pop().startsWith(PREFIX))
     .map(j => [j.name.split('/').pop().slice(PREFIX.length), j]));
@@ -124,18 +145,7 @@ async function sync() {
     let schedule;
     try { schedule = toCron(t.schedule); }
     catch (e) { await db.doc(`taskState/${name}`).set({ error: e.message }, { merge: true }); continue; }
-    const job = {
-      name: `projects/${PROJECT}/locations/${SCHEDULER_REGION}/jobs/${PREFIX}${name}`,
-      description: `Local Automation: ${name} (${t.schedule})`,
-      schedule, timeZone,
-      attemptDeadline: '60s',
-      httpTarget: {
-        uri: runUrl, httpMethod: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: Buffer.from(JSON.stringify(runBody(name))).toString('base64'),
-        oauthToken: { serviceAccountEmail: SCHEDULER_SA, scope: 'https://www.googleapis.com/auth/cloud-platform' },
-      },
-    };
+    const job = schedulerJob(`${PREFIX}${name}`, `Local Automation: ${name} (${t.schedule})`, schedule, runBody(name));
     const cur = existing.get(name);
     if (!cur) { await gapi('POST', base, job); done.push(`schemalade ${name}: ${schedule}`); }
     else if (cur.schedule !== schedule || cur.timeZone !== timeZone || cur.httpTarget?.uri !== runUrl) {
@@ -146,6 +156,19 @@ async function sync() {
     existing.delete(name);
   }
   for (const name of existing.keys()) { await gapi('DELETE', `${base}/${PREFIX}${name}`); done.push(`tog bort schema ${name}`); }
+
+  // Morgonmejlet: ett eget schema när det är påslaget i profilen
+  const d = profile.digest || {};
+  const cur = (await gapi('GET', `${base}?pageSize=500`)).jobs?.find(j => j.name.endsWith(`/${DIGEST_JOB}`));
+  if (d.enabled && TIME_RE.test(d.time || '')) {
+    const schedule = toCron(`daily ${d.time}`);
+    const job = schedulerJob(DIGEST_JOB, `Local Automation: morgonmejl (${d.time})`, schedule, digestBody());
+    if (!cur) { await gapi('POST', base, job); done.push(`schemalade morgonmejl: ${schedule}`); }
+    else if (cur.schedule !== schedule || cur.timeZone !== timeZone || cur.httpTarget?.uri !== runUrl) {
+      await gapi('PATCH', `${base}/${DIGEST_JOB}`, job);
+      done.push(`uppdaterade morgonmejl: ${schedule}`);
+    }
+  } else if (cur) { await gapi('DELETE', `${base}/${DIGEST_JOB}`); done.push('tog bort morgonmejlet'); }
   return done;
 }
 
@@ -180,6 +203,38 @@ async function owner(req) {
   } catch { return false; }
 }
 
+// Körningen i Cloud Run (servicekontot la-runner) med ett ID-token från metadataservern
+async function runner(req) {
+  const token = (req.headers.authorization || '').replace(/^Bearer /, '');
+  if (!token || !API_URL || !RUNNER_SA) return false;
+  try {
+    const t = (await oauth.verifyIdToken({ idToken: token, audience: API_URL })).getPayload();
+    return t.email === RUNNER_SA && t.email_verified === true;
+  } catch { return false; }
+}
+
+// Skickar dagens morgonmejl till ägaren. Mottagaren är alltid OWNER_EMAIL, så även
+// om någon annan än körningen lyckas anropa detta kan mejlet bara gå till ägaren.
+async function sendDigest(date) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) throw Object.assign(new Error('ogiltigt datum'), { code: 400 });
+  const ref = db.doc(`digests/${date}`);
+  const d = await db.runTransaction(async tx => {
+    const d = (await tx.get(ref)).data();
+    if (!d || d.status !== 'ready' || typeof d.markdown !== 'string') throw Object.assign(new Error('inget mejl att skicka'), { code: 409 });
+    if ((d.mails || 0) >= MAX_MAILS_PER_DAY) throw Object.assign(new Error('för många mejl i dag'), { code: 429 });
+    tx.update(ref, { status: 'sending', mails: (d.mails || 0) + 1 });
+    return d;
+  });
+  try {
+    await sendMail(OWNER_EMAIL, String(d.subject || 'Morgonmejl').slice(0, 200), d.markdown.slice(0, 200_000));
+    await ref.update({ status: 'sent', sentAt: FieldValue.serverTimestamp(), error: null });
+  } catch (e) {
+    await ref.update({ status: 'error', error: e.message });
+    throw e;
+  }
+  return { sent: true };
+}
+
 async function readJson(req) {
   let raw = '';
   for await (const c of req) { raw += c; if (raw.length > 10_000) throw new Error('för stor förfrågan'); }
@@ -200,9 +255,14 @@ http.createServer(async (req, res) => {
   try {
     if (req.method === 'OPTIONS') return send(204, {});
     if (req.method !== 'POST') return send(405, { error: 'metoden stöds inte' });
+    if (req.url === '/digest/send') {
+      if (!await runner(req)) return send(403, { error: 'inte behörig' });
+      return send(200, await sendDigest((await readJson(req)).date));
+    }
     if (!await owner(req)) return send(403, { error: 'inte behörig' });
     if (req.url === '/run') return send(202, await run((await readJson(req)).task));
     if (req.url === '/sync') return send(200, { done: await sync() });
+    if (req.url === '/digest') { await gapi('POST', runUrl, digestBody(true)); return send(202, { started: true }); }
     send(404, { error: 'okänd adress' });
   } catch (e) {
     console.error(e);

@@ -2,7 +2,9 @@
 // Startas med: node ui/server.mjs   (eller automatiskt via ui/install-ui.sh)
 //
 // All åtkomst till uppgifter går via API:t under /api. Webbsidan i ui/public
-// pratar antingen med det API:t eller, i molnversionen, med Firestore.
+// pratar antingen med det API:t eller, i molnversionen, med Firestore. När molnet
+// används (FIREBASE_AGENT_EMAIL i .env) går /api här också mot Firestore, via
+// cloud-backend.mjs, så att gränssnittet fungerar lokalt och inbäddat i devctl.
 
 import http from 'node:http';
 import fs from 'node:fs/promises';
@@ -13,6 +15,8 @@ import {
   checkSchedule, syncSchedules, startRun, status, listFiles, safeWorkPath,
   validInput, validMcp, renameTask, cloudManaged, readProfile, writeProfile, detectIdentity,
 } from './lib.mjs';
+// Laddas bara i molnläget (kräver .firebaserc och gcloud)
+const cloud = () => import('./cloud-backend.mjs');
 
 const PUBLIC = path.join(ROOT, 'ui', 'public');
 const HOST = '127.0.0.1';
@@ -37,12 +41,10 @@ async function readJson(req) {
   return JSON.parse(raw || '{}');
 }
 
-const CLOUD_MSG = 'Uppgifterna hanteras i webbappen i molnet. Ändra dem där.';
 // "- [ ] text" eller "1. [x] text": prefix, bock, avslut, text
 const TODO_RE = /^(\s*(?:[-*+]|\d+[.)])\s+\[)[ xX](\]\s+)(.*)$/;
 
 async function saveTask(res, name, body, isNew) {
-  if (await cloudManaged()) return fail(res, 409, CLOUD_MSG);
   const err = validInput(body);
   if (err) return fail(res, 400, err);
   const check = await checkSchedule(body.schedule.trim());
@@ -57,7 +59,7 @@ async function saveTask(res, name, body, isNew) {
     try { await renameTask(name, body.name); } catch (e) { return fail(res, e.code || 500, e.message); }
     name = body.name;
   }
-  await fs.writeFile(path.join(TASKS, `${name}.md`), serializeTask({ schedule: body.schedule.trim(), enabled: !!body.enabled, mcp, prompt: body.prompt }));
+  await fs.writeFile(path.join(TASKS, `${name}.md`), serializeTask({ schedule: body.schedule.trim(), enabled: !!body.enabled, digest: !!body.digest, mcp, prompt: body.prompt }));
   const sync = await syncSchedules();
   send(res, isNew ? 201 : 200, { task: await readTask(name), sync: sync.out });
 }
@@ -76,10 +78,7 @@ async function api(req, res, parts, url) {
 
   if (parts.length === 1 && parts[0] === 'profile') {
     if (m === 'GET') return send(res, 200, { profile: await readProfile(), detected: await detectIdentity() });
-    if (m === 'PUT') {
-      if (await cloudManaged()) return fail(res, 409, 'Profilen hanteras i webbappen i molnet. Ändra den där.');
-      return send(res, 200, { profile: await writeProfile(await readJson(req)) });
-    }
+    if (m === 'PUT') return send(res, 200, { profile: await writeProfile(await readJson(req)) });
   }
 
   if (parts[0] !== 'tasks') return fail(res, 404, 'okänd adress');
@@ -102,7 +101,6 @@ async function api(req, res, parts, url) {
     if (m === 'GET') return send(res, 200, await readTask(name));
     if (m === 'PUT') return saveTask(res, name, await readJson(req), false);
     if (m === 'DELETE') {
-      if (await cloudManaged()) return fail(res, 409, CLOUD_MSG);
       await fs.unlink(file);
       const sync = await syncSchedules();
       return send(res, 200, { deleted: name, sync: sync.out });
@@ -177,6 +175,14 @@ http.createServer(async (req, res) => {
 
     const url = new URL(req.url, `http://${req.headers.host}`);
     const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+    if (parts[0] === 'api' && await cloudManaged()) {
+      // Molnläget: uppgifterna finns i Firestore, se cloud-backend.mjs
+      const body = ['POST', 'PUT', 'PATCH'].includes(req.method) ? await readJson(req) : {};
+      try {
+        const r = await (await cloud()).cloudApi(req.method, parts.slice(1), url, body);
+        return r && '__text' in r ? send(res, 200, r.__text, 'text/plain; charset=utf-8') : send(res, 200, r);
+      } catch (e) { return fail(res, Number.isInteger(e.code) ? e.code : 500, e.message); }
+    }
     if (parts[0] === 'api') return await api(req, res, parts.slice(1), url);
     if (req.method === 'GET') return await serveStatic(res, url.pathname);
     fail(res, 405, 'metoden stöds inte');

@@ -27,6 +27,11 @@ Servern (`ui/server.mjs`) har inga beroenden utöver Node och lyssnar bara på
 127.0.0.1. Den avvisar anrop från andra webbsidor (Host-, Origin- och
 `x-local-ui`-kontroll).
 
+När uppgifterna körs i molnet (`FIREBASE_AGENT_EMAIL` finns i `.env`) läser och skriver
+servern Firestore i stället för `tasks/` och anropar Cloud Run-API:t
+(`ui/cloud-backend.mjs`), med din gcloud-inloggning. Då är det lokala gränssnittet,
+och fliken Automation i devctl, likvärdigt med webbappen i molnet.
+
 ### Arkitektur och plan för molnversion
 
 ```
@@ -136,6 +141,28 @@ inte listas laddas inte alls (`--strict-mcp-config`).
 | Gmail + Kalender, privat | `google` | [taylorwilsdon/google_workspace_mcp](https://github.com/taylorwilsdon/google_workspace_mcp) |
 | Gmail + Kalender, jobb | `google-work` | samma, eget konto och egen token |
 | Linear | `linear` | officiell, `mcp.linear.app` (läsläge: `/mcp/readonly`) |
+| PostHog | `posthog` | officiell, `mcp.posthog.com` (läsläge: `?readonly=true`, låst till projektet Halcy) |
+| Apple Notes | `notes` | filer i `/notes`, synkade från Macen |
+| Obsidian | `obsidian` | filer i `/obsidian/<valv>`, synkade från Macen |
+
+### Apple Notes och Obsidian → `sync.json`
+Notes och valven finns bara på Macen, så `sync/sync.mjs` synkar dem med en privat bucket
+(`gs://<projekt>-notes`, europe-north2) var 10:e minut. Uppgifterna ser dem som vanliga filer:
+
+- `/notes/<konto>/<mapp>/<titel>.md` – en fil per anteckning, med `id` m.m. i frontmatter.
+- `/obsidian/<valv>/…` – valven i `sync.json` (dolda mappar och bilder synkas inte).
+
+Med `notes:write`/`obsidian:write` läggs ändringarna i en outbox som Macen för in vid nästa synk.
+Inget som ändrats på Macen sedan kopian togs skrivs över: Obsidian får en konfliktkopia bredvid,
+Notes får en ny anteckning. Anteckningar med bilagor skrivs aldrig över (bara ren text synkas),
+borttagna filer i `/notes` tar inte bort anteckningar och borttagna Obsidian-filer hamnar i `.trash/`.
+Lokalt (`run.sh`) monteras valven direkt och Notes är skrivskyddat.
+
+```bash
+./cloud/deploy.sh din@gmail.com   # skapar bucketen och ger körningen åtkomst
+./sync/install-sync.sh            # synka var 10:e minut (--remove för att ta bort); logg i logs/sync.log
+node sync/sync.mjs                # synka en gång direkt
+```
 
 ### GitHub → `GITHUB_PAT`
 github.com → Settings → Developer settings → Fine-grained tokens. Välj repon och
@@ -158,10 +185,15 @@ skriva, ge *Read and write* på det som behövs.
    token fungera efter 7 dagar.
 3. *Credentials* → *Create OAuth client ID* → **Desktop app**. Kopiera id och secret.
 4. Kör `./mcp/google-login.sh` en gång och godkänn i webbläsaren. Token sparas i
-   `data/google/` och förnyas automatiskt.
+   `data/google/` och förnyas automatiskt. Den får bara **läsa** Gmail och kalendern.
 5. Jobbkonto: sätt `GOOGLE_WORK_EMAIL` och kör `./mcp/google-login.sh work`.
-   Samma OAuth-klient fungerar; token sparas i `data/google-work/`. Kontots
-   Workspace-admin kan behöva godkänna appen.
+   Samma OAuth-klient fungerar; token sparas i `data/google-work/` och får läsa Gmail
+   och ändra kalendern (för fokusblocken). Kontots Workspace-admin kan behöva godkänna appen.
+6. Morgonmejlet: kör `./mcp/google-login.sh send` (efter steg 4). Den token får bara
+   skicka mejl och ligger bara i API-tjänsten, aldrig i körningen där Claude kör.
+   Mottagaren är alltid du själv.
+
+Skriptet ber bara om de behörigheter som behövs och återkallar en äldre token som hade fler.
 
 ## Bra att veta
 
