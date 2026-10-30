@@ -19,6 +19,7 @@ const API_URL = process.env.API_URL || '';
 const MAX_AGE_MS = 20 * 3600_000;   // rapporter från det senaste dygnet
 const MAX_REPORT = 60_000;
 const MAX_RUNS_PER_DAY = 5;
+const WAIT_MS = 20 * 60_000;     // så länge mejlet väntar på jobb som fortfarande körs
 
 if (!API_URL) { console.error('API_URL saknas'); process.exit(2); }
 
@@ -50,6 +51,16 @@ try {
   const all = (await db.collection('tasks').get()).docs.map(d => ({ id: d.id, ...d.data() }));
   const marked = all.filter(t => t.digest);
   const tasks = (marked.length ? marked : all.filter(t => t.enabled)).map(t => t.id).sort();
+  // Jobben körs parallellt; vänta tills de som körs nu är klara (högst WAIT_MS)
+  const deadline = Date.now() + WAIT_MS;
+  for (;;) {
+    const states = await Promise.all(tasks.map(t => db.doc(`taskState/${t}`).get().then(d => d.data() || {})));
+    const running = tasks.filter((t, i) => states[i].running && Date.now() - (states[i].lockedAt?.toMillis?.() ?? 0) < 40 * 60_000);
+    if (!running.length) break;
+    if (Date.now() > deadline) { console.log(`väntade inte längre på: ${running.join(', ')}`); break; }
+    console.log(`väntar på: ${running.join(', ')}`);
+    await new Promise(r => setTimeout(r, 15_000));
+  }
   const since = new Date(Date.now() - MAX_AGE_MS).toISOString();
   const sources = [];
   for (const task of tasks) {
