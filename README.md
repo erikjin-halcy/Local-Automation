@@ -146,6 +146,8 @@ inte listas laddas inte alls (`--strict-mcp-config`).
 | Obsidian | `obsidian` | filer i `/obsidian/<valv>`, synkade från Macen |
 
 ### Apple Notes och Obsidian → `sync.json`
+Kopiera `sync.example.json` till `sync.json` och ange dina valv. Filen är personlig och committas inte.
+
 Notes och valven finns bara på Macen, så `sync/sync.mjs` synkar dem med en privat bucket
 (`gs://<projekt>-notes`, europe-north2) var 10:e minut. Uppgifterna ser dem som vanliga filer:
 
