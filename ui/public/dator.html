@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Datorn – Local Automation</title>
+<link rel="icon" href="icon.svg">
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+  :root {
+    --bg: #f6f5f1; --panel: #ffffff; --text: #1d1d1b; --muted: #5f5f5a; --line: #e3e2dd; --code: #efeeea;
+    --accent: #b4532f; --ok: #2f7a45; --ok-soft: #e7f2ea; --bad: #b83a26; --bad-soft: #fbece8; --warn: #9a6a12; --warn-soft: #f8f0dc;
+    --run: #2f6fc9; --run-soft: #eaf1fb;
+    --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1b1b19; --panel: #242422; --text: #ecebe6; --muted: #a3a29c; --line: #363633; --code: #1e1e1c;
+      --accent: #d97757; --ok: #5cb87a; --ok-soft: #22352a; --bad: #e46a55; --bad-soft: #3a2420; --warn: #e0b45a; --warn-soft: #3a3020;
+      --run: #6a9ee8; --run-soft: #1f2b3d; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--sans); overflow-wrap: anywhere; }
+  main { max-width: 760px; margin: 0 auto; padding: 18px 16px calc(40px + env(safe-area-inset-bottom)); }
+  a { color: var(--accent); }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 26px 0 8px; font-weight: 600; }
+  .top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .back { text-decoration: none; font-size: 14px; }
+  .muted { color: var(--muted); } .small { font-size: 13px; } .mono { font-family: var(--mono); font-size: 12.5px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .pill { font-size: 12px; padding: 1px 8px; border-radius: 10px; background: var(--code); color: var(--muted); white-space: nowrap; }
+  .pill.ok { background: var(--ok-soft); color: var(--ok); } .pill.bad { background: var(--bad-soft); color: var(--bad); }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); } .pill.run { background: var(--run-soft); color: var(--run); }
+  .banner { padding: 10px 14px; border-radius: 10px; margin: 14px 0 4px; font-size: 14px; }
+  .banner.old { background: var(--warn-soft); color: var(--warn); } .banner.fresh { background: var(--ok-soft); color: var(--ok); }
+  .counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+  .counts div { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 4px; text-align: center; min-width: 0; }
+  .counts span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card, .branch, .row > * { min-width: 0; }
+  .counts b { display: block; font-size: 20px; }
+  .branch { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
+  .empty { color: var(--muted); font-size: 14px; padding: 4px 2px; }
+  button { font: inherit; border-radius: 8px; padding: 9px 16px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+</style>
+</head>
+<body>
+<main>
+  <div class="top"><a class="back" href="./">← Local Automation</a></div>
+  <div class="top" style="margin-top:10px"><h1>Datorn</h1><span class="muted" id="host"></span></div>
+  <div id="view"><p class="muted">Laddar …</p></div>
+</main>
+<script type="module">
+// Visar sammanfattningen som devctl på Macen skickar till Firestore (agent/devctl), så att läget syns
+// på mobilen även när Macen är avstängd. Bara ägarens Google-konto kan läsa den.
+const V = '11.0.2';
+const [{ firebaseConfig }, { initializeApp }, A, F] = await Promise.all([
+  import('./firebase-config.js'),
+  import(`https://www.gstatic.com/firebasejs/${V}/firebase-app.js`),
+  import(`https://www.gstatic.com/firebasejs/${V}/firebase-auth.js`),
+  import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`),
+]);
+const app = initializeApp(firebaseConfig);
+const auth = A.getAuth(app);
+const db = F.getFirestore(app);
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function ago(d) {
+  const m = Math.round((Date.now() - d.getTime()) / 60000);
+  if (m < 1) return "nyss";
+  if (m < 60) return `för ${m} min sedan`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `för ${h} tim sedan`;
+  return `för ${Math.round(h / 24)} dagar sedan`;
+}
+const SEV = { "hög": "bad", "medel": "warn", "låg": "" };
+const CI = { success: ["ok", "CI ✓"], failure: ["bad", "CI ✗"], running: ["run", "CI ⏳"] };
+
+let data = null;
+function render() {
+  if (!data) { $("#view").innerHTML = `<p class="muted">Ingen sammanfattning än. Den skickas av devctl på Macen var 15:e minut.</p>`; return; }
+  const updated = data.updatedAt?.toDate?.() || new Date(0);
+  const old = Date.now() - updated.getTime() > 70 * 60000;
+  $("#host").textContent = data.host ? `(${data.host})` : "";
+  const c = data.counts || {};
+  const findings = data.findings || [], sessions = data.sessions || [], repos = data.repos || [], parked = data.parked || [];
+  $("#view").innerHTML = `
+    <div class="banner ${old ? "old" : "fresh"}">${old
+      ? `Senast uppdaterad ${updated.toLocaleString("sv-SE", { dateStyle: "short", timeStyle: "short" })} (${ago(updated)}). Macen är troligen avstängd eller i vila; läget kan ha ändrats sedan dess.`
+      : `Uppdaterad ${ago(updated)} (${updated.toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" })}). Macen är på.`}</div>
+    <div class="counts">
+      <div><b>${sessions.length}</b><span class="small muted">sessioner</span></div>
+      <div><b>${findings.length}</b><span class="small muted">fynd</span></div>
+      <div><b>${c.servers ?? 0}</b><span class="small muted">servrar</span></div>
+      <div><b>${c.containers ?? 0}</b><span class="small muted">containrar</span></div>
+    </div>
+
+    <h2>Säkerhet och andra fynd</h2>
+    ${findings.length ? findings.map(f => `<div class="card">
+      <div class="row"><span class="pill ${SEV[f.severity] || ""}">${esc(f.severity)}</span><b>${esc(f.repo)}</b><span class="muted small">@${esc(f.branch)}</span><span class="muted small">${esc(f.agent)}</span></div>
+      <div class="mono" style="margin-top:4px">${esc(f.file)} · ${esc(f.rule)}</div>
+      <div class="small" style="margin-top:4px">${esc(f.finding)}</div></div>`).join("") : `<div class="empty">Inga öppna fynd.</div>`}
+
+    <h2>Claude-sessioner (senaste dygnet)</h2>
+    ${sessions.length ? sessions.map(s => `<div class="card">
+      <div class="row"><b>${esc(s.title || s.name)}</b><span class="pill ${s.status === "busy" ? "run" : ""}">${s.status === "busy" ? "arbetar" : "väntar"}</span></div>
+      <div class="small muted">${esc(s.name)}${s.repo ? ` · ${esc(s.repo)}@${esc(s.branch || "")}` : ""} · senast ${esc((s.last || "").slice(11))}</div>
+      ${s.prompt ? `<div class="small" style="margin-top:4px"><span class="muted">Senaste önskemål:</span> ${esc(s.prompt)}</div>` : ""}
+      ${s.reply ? `<div class="small" style="margin-top:2px"><span class="muted">Senaste svar:</span> ${esc(s.reply)}</div>` : ""}</div>`).join("") : `<div class="empty">Inga sessioner det senaste dygnet.</div>`}
+
+    <h2>Repos</h2>
+    ${repos.length ? repos.map(r => `<div class="card">
+      <div class="row"><b>${esc(r.name)}</b>${r.prs ? `<span class="pill">${r.prs} öppna PR</span>` : ""}${r.parked ? `<span class="pill warn">📌 ${r.parked}</span>` : ""}</div>
+      ${(r.branches || []).map(b => `<div class="branch">
+        <div class="row"><span class="mono">${esc(b.branch)}</span>
+          ${b.changes ? `<span class="pill warn">±${b.changes}</span>` : `<span class="pill ok">ren</span>`}
+          ${b.ahead || b.behind ? `<span class="pill">↑${b.ahead} ↓${b.behind}</span>` : ""}
+          ${b.ci && CI[b.ci] ? `<span class="pill ${CI[b.ci][0]}">${CI[b.ci][1]}</span>` : ""}
+          ${b.pr ? `<a class="small" href="${esc(b.prUrl)}">${esc(b.pr)}</a>` : ""}</div>
+        ${b.last ? `<div class="small muted">${esc(b.last)}</div>` : ""}
+        ${(b.servers || []).length || b.panes || b.containers ? `<div class="small muted">Igång: ${[...(b.servers || []), b.panes ? `${b.panes} terminal${b.panes > 1 ? "er" : ""}` : "", b.containers ? `${b.containers} containrar` : ""].filter(Boolean).map(esc).join(" · ")}</div>` : ""}
+      </div>`).join("")}</div>`).join("") : `<div class="empty">Inga aktiva repos.</div>`}
+
+    <h2>Parkerat</h2>
+    ${parked.length ? `<div class="card">${parked.map(p => `<div class="small" style="padding:3px 0"><b>${esc(p.repo)}</b> · ${esc(p.text)} <span class="muted">${esc(p.date)}</span></div>`).join("")}</div>` : `<div class="empty">Inget parkerat.</div>`}
+    <p class="small muted" style="margin-top:24px">Skickas av devctl på Macen var 15:e minut när något har ändrats. Allt här är bara för läsning.</p>`;
+}
+
+A.onAuthStateChanged(auth, user => {
+  if (!user) {
+    $("#view").innerHTML = `<p>Logga in med Google-kontot som äger Local Automation.</p><button id="login">Logga in med Google</button>`;
+    $("#login").onclick = async () => {
+      const p = new A.GoogleAuthProvider();
+      try { await A.signInWithPopup(auth, p); } catch (e) { if (e.code === "auth/popup-blocked") await A.signInWithRedirect(auth, p); }
+    };
+    return;
+  }
+  F.onSnapshot(F.doc(db, "agent", "devctl"), snap => { data = snap.exists() ? snap.data() : null; render(); },
+    err => { $("#view").innerHTML = `<p class="muted">Kunde inte läsa: ${esc(err.message)}</p>`; });
+  setInterval(render, 60000); // håll "för X min sedan" aktuellt
+});
+</script>
+</body>
+</html>
