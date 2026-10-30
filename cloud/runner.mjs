@@ -29,6 +29,8 @@ const MAX_OUTBOX = 5_000_000;
 
 // Morgonmejlet körs av samma jobb, se digest.mjs
 if (process.env.MODE === 'digest') { await import('./digest.mjs'); process.exit(0); }
+// Veckoarkivets molndel, se archive.mjs
+if (process.env.MODE === 'archive') { await import('./archive.mjs'); process.exit(0); }
 if (!NAME_RE.test(TASK)) { console.error('TASK saknas eller är ogiltig'); process.exit(2); }
 
 initializeApp();

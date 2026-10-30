@@ -42,6 +42,10 @@ const digestBody = (force = false) => ({ overrides: { containerOverrides: [{ env
   { name: 'MODE', value: 'digest' }, ...(force ? [{ name: 'FORCE', value: '1' }] : []),
 ] }] } });
 const DIGEST_JOB = 'la-digest';
+// Veckoarkivet (cloud/archive.mjs) arkiverar Firestore-rapporter från avslutade veckor, måndagar 00:30
+const ARCHIVE_JOB = 'la-archive';
+const ARCHIVE_SCHEDULE = '30 0 * * 1';
+const archiveBody = { overrides: { containerOverrides: [{ env: [{ name: 'MODE', value: 'archive' }] }] } };
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 // ---------- schema -> cron (samma format som install.sh) ----------
@@ -169,6 +173,15 @@ async function sync() {
       done.push(`uppdaterade morgonmejl: ${schedule}`);
     }
   } else if (cur) { await gapi('DELETE', `${base}/${DIGEST_JOB}`); done.push('tog bort morgonmejlet'); }
+
+  // Veckoarkivet: alltid på
+  const arch = (await gapi('GET', `${base}?pageSize=500`)).jobs?.find(j => j.name.endsWith(`/${ARCHIVE_JOB}`));
+  const archJob = schedulerJob(ARCHIVE_JOB, 'Local Automation: veckoarkiv (måndagar 00:30)', ARCHIVE_SCHEDULE, archiveBody);
+  if (!arch) { await gapi('POST', base, archJob); done.push(`schemalade veckoarkivet: ${ARCHIVE_SCHEDULE}`); }
+  else if (arch.schedule !== ARCHIVE_SCHEDULE || arch.timeZone !== timeZone || arch.httpTarget?.uri !== runUrl) {
+    await gapi('PATCH', `${base}/${ARCHIVE_JOB}`, archJob);
+    done.push(`uppdaterade veckoarkivet: ${ARCHIVE_SCHEDULE}`);
+  }
   return done;
 }
 

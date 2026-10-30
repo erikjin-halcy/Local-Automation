@@ -1,20 +1,22 @@
-// Veckoarkiv: samlar det som Local-Automation och devctl har genererat under avslutade veckor,
-// komprimerar det till ett arkiv i molnet och städar bort originalen.
+// Veckoarkivets Macdel: samlar det som Local-Automation och devctl har genererat lokalt under avslutade
+// veckor, komprimerar det till ett arkiv i molnet och flyttar originalen till papperskorgen.
+// Rapporterna och körningarna i Firestore arkiveras av molnet (cloud/archive.mjs, måndagar 00:30),
+// så att det fungerar även när Macen är avstängd.
 //
-//   gs://<bucket>/archive/<ÅÅÅÅ-Vvv>/<tid>.tar.gz   arkivet (en eller flera delar per vecka)
-//   gs://<bucket>/archive/<ÅÅÅÅ-Vvv>/<tid>.json     manifest för delen (filer, öppna att göra-punkter)
+//   gs://<bucket>/archive/<ÅÅÅÅ-Vvv>/<tid>.tar.gz        Macens del
+//   gs://<bucket>/archive/<ÅÅÅÅ-Vvv>/<tid>-moln.tar.gz   molnets del
+//   gs://<bucket>/archive/<ÅÅÅÅ-Vvv>/<tid>[-moln].json   manifest för delen (filer, öppna att göra-punkter)
 //
 // Det som arkiveras (bara genererade filer, aldrig sådant man skriver själv):
 //   valvet Local Automation:  Dev-logg/ (devctl), Rapporter/ (uppgifter)
 //   repot:                    work/<uppgift>/ och logs/<uppgift>/ från lokala körningar
-//   Firestore:                files (rapporter i /work) och runs (körningar) för uppgifterna
 //
-// Ordning: arkivet laddas upp och kontrolleras (md5) innan något tas bort. Lokala filer flyttas
-// till papperskorgen (valvets .trash/ och data/trash/), Firestore-dokumenten tas bort.
-// I valvet skapas Arkiv/<vecka>.md som pekare med innehåll, öppna punkter och hur man hämtar tillbaka.
+// Ordning: arkivet laddas upp och kontrolleras (md5) innan något flyttas. Lokala filer flyttas till
+// papperskorgen (valvets .trash/ och data/trash/). I valvet skapas Arkiv/<vecka>.md som pekare med
+// innehåll, öppna punkter och hur man hämtar tillbaka, för både Macens och molnets delar.
 //
 // Användning:
-//   node sync/archive.mjs [run] [--dry-run]    arkivera alla avslutade veckor (måndagar 00:30 via install-archive.sh)
+//   node sync/archive.mjs [run] [--dry-run]    arkivera alla avslutade veckor (måndagar 01:00 via install-archive.sh)
 //   node sync/archive.mjs list                 visa arkiven i molnet
 //   node sync/archive.mjs restore <vecka>      packa upp en vecka till valvet: Arkiv/<vecka>/
 //   node sync/archive.mjs delete <vecka>… [--yes]          ta bort veckor permanent från molnet
@@ -28,6 +30,7 @@ import path from 'node:path';
 import readline from 'node:readline/promises';
 import { promisify } from 'node:util';
 import { loadConfig } from './sync.mjs';
+import { ARCHIVE_PREFIX, WEEK_RE, isoWeek, itemDate, openTodos, period, stamp, weekStart } from '../cloud/weeks.mjs';
 
 const exec = promisify(execFile);
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -35,66 +38,15 @@ const DATA = path.join(ROOT, 'data');
 const VAULT_KEY = 'Local-Automation';
 const VAULT_DIRS = ['Dev-logg', 'Rapporter'];
 const TEXT_RE = /\.(md|markdown|txt|log|csv)$/i;
-const DATE_RE = /(\d{4})-(\d{2})-(\d{2})/;
-const WEEK_RE = /^\d{4}-V\d{2}$/;
-const TODO_RE = /^\s*(?:[-*+]|\d+[.)])\s+\[ \]\s+(.*)$/;
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 const md5b64 = buf => crypto.createHash('md5').update(buf).digest('base64');
-
-// ---------- veckor (lokal tid, ISO 8601) ----------
-
-const dayOf = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-
-export function weekStart(d) {
-  const t = dayOf(d);
-  t.setDate(t.getDate() - (t.getDay() + 6) % 7);
-  return t;
-}
-
-export function isoWeek(d) {
-  const t = dayOf(d);
-  t.setDate(t.getDate() - (t.getDay() + 6) % 7 + 3);  // veckans torsdag avgör året
-  const jan4 = new Date(t.getFullYear(), 0, 4);
-  const week = 1 + Math.round(((t - weekStart(jan4)) / 864e5 - 3) / 7);
-  return `${t.getFullYear()}-V${String(week).padStart(2, '0')}`;
-}
-
-// Datum i filnamnet (dagsplan-2026-10-30.md) går före ändringstiden
-export function itemDate(name, fallback) {
-  const m = DATE_RE.exec(path.basename(name));
-  return m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(fallback);
-}
 
 // ---------- molnet ----------
 
 function cloud(cfg) {
   const gcloud = async (...args) => (await exec('gcloud', ['--project', cfg.project, '--quiet', ...args],
     { maxBuffer: 256 * 1024 * 1024, timeout: 10 * 60_000 })).stdout;
-  const base = `https://firestore.googleapis.com/v1/projects/${cfg.project}/databases/(default)/documents`;
-  let token = null;
-  const fsApi = async (url, opts = {}) => {
-    token ??= (await gcloud('auth', 'print-access-token')).trim();
-    const res = await fetch(url.startsWith('http') ? url : `${base}/${url}`, { ...opts, headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) throw Object.assign(new Error(`Firestore ${res.status}: ${(await res.text()).slice(0, 300)}`), { status: res.status });
-    return res.json();
-  };
-  return { gcloud, fsApi, bucket: `gs://${cfg.bucket}/archive` };
-}
-
-const value = v => v == null ? null : 'stringValue' in v ? v.stringValue : 'integerValue' in v ? Number(v.integerValue)
-  : 'booleanValue' in v ? v.booleanValue : 'timestampValue' in v ? v.timestampValue : null;
-
-async function listDocs(fsApi, collection) {
-  const out = [];
-  let page = '';
-  do {
-    const r = await fsApi(`${collection}?pageSize=300${page ? `&pageToken=${encodeURIComponent(page)}` : ''}`);
-    for (const d of r.documents || []) {
-      out.push({ name: d.name, updateTime: d.updateTime, ...Object.fromEntries(Object.entries(d.fields || {}).map(([k, v]) => [k, value(v)])) });
-    }
-    page = r.nextPageToken || '';
-  } while (page);
-  return out;
+  return { gcloud, bucket: `gs://${cfg.bucket}/${ARCHIVE_PREFIX}` };
 }
 
 async function lsArchive(c) {
@@ -141,23 +93,6 @@ async function localItems(vault) {
   return items;
 }
 
-async function cloudItems(fsApi) {
-  const running = new Set((await listDocs(fsApi, 'taskState')).filter(s => s.running).map(s => s.name.split('/').at(-1)));
-  const items = [];
-  for (const f of await listDocs(fsApi, 'files')) {
-    // Pågående uppgifter och filer utan innehåll (binära, för stora) lämnas kvar
-    if (running.has(f.task) || f.content == null || !TEXT_RE.test(f.path)) continue;
-    items.push({ kind: 'doc', doc: f.name, updateTime: f.updateTime, path: `molnet/files/${f.task}/${f.path}`,
-      content: f.content, date: itemDate(f.path, f.modified) });
-  }
-  for (const r of await listDocs(fsApi, 'runs')) {
-    if (running.has(r.task) || r.running) continue;
-    items.push({ kind: 'doc', doc: r.name, updateTime: r.updateTime, path: `molnet/runs/${r.task}/${r.id}.log`,
-      content: r.log || '', exit: r.exit, date: itemDate(r.id, r.start) });
-  }
-  return items;
-}
-
 // ---------- pekaranteckningar i valvet ----------
 
 const kb = n => n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} kB`;
@@ -168,7 +103,7 @@ async function writeWeekNote(vault, week, manifests, deleted = null) {
   const open = files.filter(f => f.todos?.length);
   const groups = Object.groupBy(files, f => f.path.split('/').slice(0, 3).join('/'));
   const lines = [
-    '---', 'tags: [arkiv]', `vecka: ${week}`, `filer: ${files.length}`,
+    '---', 'tags: [arkiv]', `vecka: ${week}`, `filer: ${files.length}`, `delar: ${manifests.length}`,
     `status: ${deleted ? `borttagen ${deleted}` : 'i molnet'}`, '---',
     `# Arkiv ${week}`, '',
     deleted
@@ -200,7 +135,8 @@ async function writeIndex(vault, c) {
   await fs.writeFile(path.join(vault, 'Arkiv', 'Arkiv.md'), [
     '---', 'tags: [arkiv, moc]', '---', '# Arkiv', '',
     'Veckoarkiv med det Local-Automation och devctl har genererat (rapporter, dagsplaner, dev-logg, körningar).',
-    'Skapas varje måndag 00:30 av `sync/archive.mjs`. Den här sidan skrivs om automatiskt.', '',
+    'Molnet arkiverar rapporter och körningar måndagar 00:30 (`cloud/archive.mjs`), Macen sina lokala filer 01:00',
+    '(`sync/archive.mjs`, eller när Macen vaknar). Den här sidan skrivs om automatiskt.', '',
     '| Vecka | Delar | Storlek (komprimerat) |', '|---|---|---|', ...(rows.length ? rows : ['| – | | |']), '',
     '```bash', 'node sync/archive.mjs list', 'node sync/archive.mjs restore <vecka>',
     'node sync/archive.mjs delete <vecka>          # permanent', 'node sync/archive.mjs delete --before <vecka>', '```', '',
@@ -227,30 +163,25 @@ async function withLock(fn) {
 async function archive(cfg, c, vault, dryRun) {
   // ARCHIVE_NOW (t.ex. 2026-11-02) låtsas att det är en annan dag, för att provköra med --dry-run
   const cutoff = weekStart(process.env.ARCHIVE_NOW ? new Date(process.env.ARCHIVE_NOW) : new Date());
-  const items = [...await localItems(vault), ...await cloudItems(c.fsApi)].filter(i => i.date < cutoff);
+  const items = (await localItems(vault)).filter(i => i.date < cutoff);
   const weeks = Object.groupBy(items, i => isoWeek(i.date));
-  if (!items.length) { log('inget att arkivera'); return; }
+  if (!items.length) log('inget lokalt att arkivera');
 
   for (const [week, list] of Object.entries(weeks).sort()) {
     log(`${week}: ${list.length} filer${dryRun ? ' (provkörning)' : ''}`);
     if (dryRun) { for (const i of list) log(`  ${i.path}`); continue; }
 
-    const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
     const stage = await fs.mkdtemp(path.join(os.tmpdir(), `la-archive-${week}-`));
     try {
       const files = [];
       for (const i of list) {
-        const buf = i.kind === 'local' ? await fs.readFile(i.full) : Buffer.from(i.content);
-        const text = buf.toString('utf8');
+        const buf = await fs.readFile(i.full);
         await fs.mkdir(path.dirname(path.join(stage, 'filer', i.path)), { recursive: true });
         await fs.writeFile(path.join(stage, 'filer', i.path), buf);
-        files.push({ path: i.path, size: buf.length, date: i.date.toISOString().slice(0, 10), ...(i.exit != null && { exit: i.exit }),
-          todos: /\.(md|markdown)$/i.test(i.path) ? text.split('\n').map(l => TODO_RE.exec(l)?.[1]).filter(Boolean) : [] });
+        files.push({ path: i.path, size: buf.length, date: i.date.toLocaleDateString('sv-SE'), todos: openTodos(i.path, buf.toString('utf8')) });
       }
-      const start = weekStart(list[0].date), end = new Date(start); end.setDate(end.getDate() + 6);
-      const object = `${c.bucket}/${week}/${stamp}.tar.gz`;
-      const manifest = { week, period: `${start.toLocaleDateString('sv-SE')}–${end.toLocaleDateString('sv-SE')}`,
-        createdAt: new Date().toISOString(), object, files };
+      const object = `${c.bucket}/${week}/${stamp()}.tar.gz`;
+      const manifest = { week, period: period(weekStart(list[0].date)), createdAt: new Date().toISOString(), source: 'mac', object, files };
       await fs.writeFile(path.join(stage, 'manifest.json'), JSON.stringify(manifest, null, 2));
 
       const tgz = `${stage}.tar.gz`;
@@ -264,25 +195,30 @@ async function archive(cfg, c, vault, dryRun) {
       if (remote.md5_hash !== local) throw new Error(`${week}: kontrollsumman stämmer inte (${remote.md5_hash} ≠ ${local}), inget tas bort`);
       log(`  uppladdat och kontrollerat: ${object}`);
 
-      let moved = 0, removed = 0, kept = 0;
       for (const i of list) {
-        if (i.kind === 'local') {
-          await fs.mkdir(path.dirname(i.trash), { recursive: true });
-          await fs.rename(i.full, i.trash);
-          moved++;
-        } else {
-          // Bara om dokumentet inte ändrats sedan det lästes (t.ex. en bock i webbappen)
-          try { await c.fsApi(`${i.doc.split('/documents/')[1]}?currentDocument.updateTime=${encodeURIComponent(i.updateTime)}`, { method: 'DELETE' }); removed++; }
-          catch (e) { if (e.status === 400 || e.status === 409 || e.status === 412) kept++; else throw e; }
-        }
+        await fs.mkdir(path.dirname(i.trash), { recursive: true });
+        await fs.rename(i.full, i.trash);
       }
-      log(`  ${moved} lokala filer till papperskorgen, ${removed} borttagna i Firestore${kept ? `, ${kept} ändrade under tiden och kvar till nästa vecka` : ''}`);
-      await writeWeekNote(vault, week, await weekManifests(c, week));
+      log(`  ${list.length} lokala filer till papperskorgen`);
     } finally {
       await fs.rm(stage, { recursive: true, force: true });
     }
   }
-  if (!dryRun) await writeIndex(vault, c);
+  if (!dryRun) await updateNotes(c, vault);
+}
+
+// Pekaranteckningar för alla veckor i molnet vars antal delar har ändrats, även veckor som bara
+// molnet har arkiverat (medan Macen var avstängd)
+async function updateNotes(c, vault) {
+  if (!vault) return;
+  const parts = Object.groupBy((await lsArchive(c)).filter(o => o.file.endsWith('.json')), o => o.week);
+  for (const [week, list] of Object.entries(parts)) {
+    const note = await fs.readFile(path.join(vault, 'Arkiv', `${week}.md`), 'utf8').catch(() => '');
+    if (note.includes(`\ndelar: ${list.length}\n`)) continue;
+    await writeWeekNote(vault, week, await weekManifests(c, week));
+    log(`  pekare: Arkiv/${week}.md`);
+  }
+  await writeIndex(vault, c);
 }
 
 async function weekManifests(c, week) {

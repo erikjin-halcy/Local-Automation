@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Arkiverar avslutade veckor till molnet varje måndag 00:30 (sync/archive.mjs).
+# Arkiverar avslutade veckor till molnet varje måndag 01:00 (sync/archive.mjs, Firestore-delen körs i molnet 00:30).
 # Är Macen avstängd eller sover körs det när den vaknar.
 # Användning: ./sync/install-archive.sh          ./sync/install-archive.sh --remove
 set -euo pipefail
@@ -26,11 +26,11 @@ cat > "$PLIST" <<PLIST
     <key>PATH</key><string>${NODE:h}:$(dirname "$(command -v gcloud)"):/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
   </dict>
   <key>StartCalendarInterval</key><dict>
-    <key>Weekday</key><integer>1</integer><key>Hour</key><integer>0</integer><key>Minute</key><integer>30</integer>
+    <key>Weekday</key><integer>1</integer><key>Hour</key><integer>1</integer><key>Minute</key><integer>0</integer>
   </dict>
   <key>StandardOutPath</key><string>${DIR:h}/logs/archive.log</string>
   <key>StandardErrorPath</key><string>${DIR:h}/logs/archive.log</string>
 </dict></plist>
 PLIST
 launchctl bootstrap "$DOMAIN" "$PLIST"
-echo "Veckoarkivet körs måndagar 00:30. Logg: ${DIR:h}/logs/archive.log"
+echo "Veckoarkivet körs måndagar 01:00. Logg: ${DIR:h}/logs/archive.log"
