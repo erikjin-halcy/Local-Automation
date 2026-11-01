@@ -130,6 +130,14 @@
   .job .acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
   .job .acts .btn, .job .acts button { font-size: 13px; padding: 6px 12px; }
   .plan { display: flex; flex-direction: column; gap: 14px; }
+  .current { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .current .md { overflow-wrap: anywhere; }
+  .current .md table { display: block; overflow-x: auto; }
+  .current .local { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 10px 12px; border-radius: 8px; background: var(--bg); font-size: 14px; }
+  .current .local .where { font-size: 12px; color: var(--muted); }
+  .current .seg { display: inline-flex; gap: 4px; }
+  .current .seg button[aria-pressed="true"] { background: var(--text); color: var(--panel); border-color: var(--text); }
+  .current .body { max-height: 520px; overflow: auto; min-width: 0; }
   .planhead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
   .planhead .spacer { flex: 1; }
   .planhead .more { font-size: 13px; }
@@ -359,7 +367,7 @@
         <label class="field"><span>GitHub-användarnamn</span><input type="text" data-f="github" autocomplete="off"></label>
         <label class="field"><span>Tidszon</span><input type="text" data-f="timezone" placeholder="Asia/Hong_Kong" autocomplete="off"></label>
       </div>
-      <label class="field"><span>Övrigt (roll, språk, vad Claude bör veta)</span><textarea data-f="notes" style="min-height:90px" placeholder="t.ex. Utvecklare på Halcy. Skriv på svenska."></textarea></label>
+      <label class="field"><span>Övrigt (roll, språk, vad Claude bör veta)</span><textarea data-f="notes" style="min-height:90px" placeholder="t.ex. Utvecklare på ett startup. Skriv på svenska."></textarea></label>
     </div>
     <div class="card">
       <h2>Morgonmejl</h2>
@@ -764,7 +772,7 @@ function render() {
   if (route.view === 'new') return renderSettings(document.getElementById('main'), null);
   if (route.view === 'task') return renderTask();
   renderOverview();
-  loadPlan().then(() => { if (route.view === 'overview') renderOverview(true); });
+  Promise.all([loadPlan(), loadNow()]).then(() => { if (route.view === 'overview') renderOverview(true); });
 }
 
 // ---------- översikt ----------
@@ -777,7 +785,7 @@ function greeting() {
 
 function renderOverview(auto = false) {
   const now = new Date();
-  const sig = JSON.stringify([tasks, firstName, now.getMinutes(), plan?.file]);
+  const sig = JSON.stringify([tasks, firstName, now.getMinutes(), plan?.file, nowData, nowTab]);
   if (auto && sig === viewSig) return;
   viewSig = sig;
   const active = tasks.filter(t => t.enabled);
@@ -816,7 +824,7 @@ function renderOverview(auto = false) {
       el('div', { class: 's' }, off ? `${off} ${off === 1 ? 'avstängt' : 'avstängda'}, körs bara för hand` : 'Alla körs enligt schema')));
 
   document.getElementById('main').replaceChildren(el('div', { class: 'page' },
-    head, planSection(now), stats, timeline(now),
+    head, nowSection(now), planSection(now), stats, timeline(now),
     el('section', { 'aria-labelledby': 'jobs-h' },
       el('h2', { id: 'jobs-h', style: 'margin-bottom:12px' }, 'Jobb'),
       tasks.length ? el('div', { class: 'jobs' }, ...tasks.map(jobCard))
@@ -857,7 +865,8 @@ function timeline(now) {
 
 function mcpChips(t) {
   if (!t.mcp?.length) return [el('span', { class: 'chip plain' }, 'Ingen åtkomst')];
-  return t.mcp.map(m => el('span', { class: 'chip' }, `${MCP_LABELS[m.name] || m.name} · ${m.level === 'write' ? 'läsa + skriva' : 'läsa'}`));
+  const local = new Set(mcpServers.filter(s => s.localOnly).map(s => s.name));
+  return t.mcp.map(m => el('span', { class: 'chip' }, `${local.has(m.name) ? '🔒 ' : ''}${MCP_LABELS[m.name] || m.name} · ${m.level === 'write' ? 'läsa + skriva' : 'läsa'}`));
 }
 
 function jobCard(t) {
@@ -891,6 +900,71 @@ function recentTable() {
           el('td', { class: st.cls }, cap(st.text)),
           el('td', {}, el('a', { href: taskHref(t.name, 'runs') }, 'Logg')));
       })))));
+}
+
+// ---------- aktuellt på översikten ----------
+// Morgon: dagens morgonmejl (digests/<datum>). Kväll: den senaste rapporten från jobbet "dagsrapport".
+// Överst räknarna som Macen har skrivit för local-only-organisationerna (local/counts.mjs): bara antal,
+// innehållet finns bara i organisationens valv på Macen.
+
+const EVENING_TASK_RE = /^dagsrapport/i;
+let nowData = null;   // { today, yesterday, evening: { task, path, content } }
+let nowTab = null;    // 'morgon' | 'kvall', annars efter klockan
+let nowAll = false;   // visa rapporterna under morgonmejlets sammanfattning
+
+async function loadNow() {
+  const now = new Date();
+  const y = new Date(now); y.setDate(y.getDate() - 1);
+  const [today, yesterday] = await Promise.all([isoDay(now), isoDay(y)].map(d => call('GET', `/digest/${d}`).catch(() => null)));
+  let evening = null;
+  const t = tasks.find(x => EVENING_TASK_RE.test(x.name));
+  if (t) {
+    try {
+      const f = (await call('GET', `/tasks/${enc(t.name)}/files`)).filter(f => /\.md$/i.test(f.path))
+        .sort((a, b) => b.modified.localeCompare(a.modified))[0];
+      if (f) evening = nowData?.evening?.path === f.path && nowData.evening.modified === f.modified ? nowData.evening
+        : { task: t.name, path: f.path, modified: f.modified, content: await call('GET', `/tasks/${enc(t.name)}/files/${enc(f.path)}`) };
+    } catch { evening = nowData?.evening || null; }
+  }
+  nowData = { today, yesterday, evening };
+}
+
+function nowSection(now) {
+  if (!nowData) return null;
+  const { today, yesterday, evening } = nowData;
+  const tab = nowTab || (now.getHours() >= 17 ? 'kvall' : 'morgon');
+  const pick = (org, kind) => kind === 'morgon'
+    ? today?.counts?.[org]?.morgon || yesterday?.counts?.[org]?.kvall
+    : today?.counts?.[org]?.kvall || today?.counts?.[org]?.morgon;
+  const orgs = [...new Set([today, yesterday].flatMap(d => Object.keys(d?.counts || {})))].sort();
+  const local = orgs.map(org => {
+    const e = pick(org, tab);
+    if (!e?.text) return null;
+    const at = e.tid ? new Date(e.tid) : null;
+    return el('p', { class: 'local' },
+      el('span', {}, el('strong', {}, `🔒 ${org}`), ` · ${e.text}`),
+      el('span', { class: 'where' }, `Bara antal. Läs på Macen: ${e.rapport}${at ? ` (${clock(at)} ${fmtDay(at)})` : ''}`));
+  }).filter(Boolean);
+
+  let body;
+  if (tab === 'morgon') {
+    const m = today?.markdown || '';
+    const cut = m.indexOf('\n# Rapporterna');
+    body = !m ? el('p', { class: 'muted' }, today?.status === 'running' ? 'Morgonmejlet görs just nu.' : 'Inget morgonmejl i dag än.')
+      : el('div', {}, el('div', { class: 'md', html: md(nowAll || cut < 0 ? m : m.slice(0, cut)) }),
+        cut >= 0 ? el('button', { type: 'button', onclick: () => { nowAll = !nowAll; renderOverview(); } },
+          nowAll ? 'Dölj rapporterna' : 'Visa rapporterna') : null);
+  } else {
+    body = evening ? el('div', { class: 'md', html: md(evening.content) })
+      : el('p', { class: 'muted' }, 'Ingen kvällsrapport än.');
+  }
+  const seg = el('span', { class: 'seg', role: 'group', 'aria-label': 'Visa' },
+    ...[['morgon', 'Morgon'], ['kvall', 'Kväll']].map(([k, label]) => el('button', {
+      type: 'button', 'aria-pressed': String(tab === k), onclick: () => { nowTab = k; renderOverview(); } }, label)));
+  const more = tab === 'kvall' && evening ? el('a', { href: taskHref(evening.task), class: 'more' }, 'Hela rapporten') : null;
+  return el('section', { class: 'card current', 'aria-labelledby': 'now-h' },
+    el('div', { class: 'planhead' }, el('h2', { id: 'now-h' }, 'Aktuellt'), seg, el('span', { class: 'spacer' }), more),
+    ...local, el('div', { class: 'body' }, body));
 }
 
 // ---------- dagsplan på översikten ----------
@@ -1223,7 +1297,10 @@ function renderSettings(container, t) {
       ...s.levels.map(l => el('option', { value: l, textContent: l === 'write' ? 'Läsa + skriva' : 'Läsa' })));
     sel.dataset.mcpName = s.name;
     sel.value = chosen ? chosen.level : '';
+    // Källor från en local-only-organisation (compliance.json) körs bara på Macen, aldrig här
+    if (s.localOnly) sel.disabled = !chosen;
     const warn = [
+      s.localOnly ? `🔒 Bara lokalt på Macen (compliance)${chosen ? ', ta bort den för att kunna köra uppgiften' : ''}` : '',
       s.missing.length ? `Saknas i .env: ${s.missing.join(', ')}` : '',
       s.needsLogin ? 'Kräver engångsinloggning, se README' : '',
     ].filter(Boolean).join(' · ');
@@ -1422,7 +1499,7 @@ async function refresh() {
   refreshing = true;
   try {
     await Promise.all([loadTasks(), loadStatus()]);
-    if (route.view === 'overview') await loadPlan();
+    if (route.view === 'overview') await Promise.all([loadPlan(), loadNow()]);
   } finally { refreshing = false; }
   refreshView();
 }

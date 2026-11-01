@@ -8,8 +8,14 @@
 //   gs://<bucket>/archive/<ÅÅÅÅ-Vvv>/<tid>[-moln].json   manifest för delen (filer, öppna att göra-punkter)
 //
 // Det som arkiveras (bara genererade filer, aldrig sådant man skriver själv):
-//   valvet Local Automation:  Dev-logg/ (devctl), Rapporter/ (uppgifter)
+//   valvet Local Automation:  Dev-logg/ (devctl), Rapporter/ (uppgifter) och Claude-sessionernas
+//                             anteckningar i 10 Projekt/<repo>/Claude/Sessioner/ som inte har varit
+//                             aktiva på 7 dagar
 //   repot:                    work/<uppgift>/ och logs/<uppgift>/ från lokala körningar
+//
+// Organisationer med compliance local-only (cloud/compliance.mjs) lämnar aldrig Macen: inget som
+// nämner dem (sökväg eller innehåll) laddas upp. Deras valv arkiverar sessionsanteckningar bara lokalt,
+// till <valv>/Arkiv/<vecka>/ (archiveLocal).
 //
 // Ordning: arkivet laddas upp och kontrolleras (md5) innan något flyttas. Lokala filer flyttas till
 // papperskorgen (valvets .trash/ och data/trash/). I valvet skapas Arkiv/<vecka>.md som pekare med
@@ -30,6 +36,7 @@ import path from 'node:path';
 import readline from 'node:readline/promises';
 import { promisify } from 'node:util';
 import { loadConfig } from './sync.mjs';
+import { loadCompliance } from '../cloud/compliance.mjs';
 import { ARCHIVE_PREFIX, WEEK_RE, isoWeek, itemDate, openTodos, period, stamp, weekStart } from '../cloud/weeks.mjs';
 
 const exec = promisify(execFile);
@@ -37,6 +44,10 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const DATA = path.join(ROOT, 'data');
 const VAULT_KEY = 'Local-Automation';
 const VAULT_DIRS = ['Dev-logg', 'Rapporter'];
+const SESSIONS = /^10 Projekt\/[^/]+\/Claude\/Sessioner\//;
+const IDLE_MS = 7 * 864e5;   // sessionsanteckningar arkiveras när de inte har ändrats på 7 dagar
+// Mappar med sessionsanteckningar i local-only-valven, * = en mapp per repo
+const LOCAL_VAULT_DIRS = ['70 devctl/*/Claude/Sessioner', '60 Utveckling/Sessioner'];
 const TEXT_RE = /\.(md|markdown|txt|log|csv)$/i;
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 const md5b64 = buf => crypto.createHash('md5').update(buf).digest('base64');
@@ -73,15 +84,52 @@ async function walk(dir, out = []) {
   return out;
 }
 
+// Senaste aktiviteten i en sessionsanteckning: frontmatterns "senast aktiv", "uppdaterad" eller "datum"
+// (den senaste av dem), annars när filen ändrades
+async function lastActive(full) {
+  const st = await fs.stat(full);
+  const fm = (await fs.readFile(full, 'utf8')).match(/^---\n([\s\S]*?)\n---/)?.[1] || '';
+  const dates = [...fm.matchAll(/^(?:senast aktiv|uppdaterad|datum):\s*"?(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}))?/gm)]
+    .map(([, d, t]) => new Date(`${d}T${t || '23:59'}`)).filter(d => !isNaN(d));
+  return dates.length ? new Date(Math.max(...dates)) : st.mtime;
+}
+
+// Kataloger som matchar ett mönster med * (en nivå), t.ex. "70 devctl/*/Claude/Sessioner"
+async function globDirs(root, pattern) {
+  let dirs = [root];
+  for (const part of pattern.split('/')) {
+    const next = [];
+    for (const d of dirs) {
+      if (part !== '*') { next.push(path.join(d, part)); continue; }
+      for (const e of await fs.readdir(d, { withFileTypes: true }).catch(() => [])) {
+        if (e.isDirectory() && !e.name.startsWith('.')) next.push(path.join(d, e.name));
+      }
+    }
+    dirs = next;
+  }
+  return dirs;
+}
+
+const idleBefore = () => (process.env.ARCHIVE_NOW ? new Date(process.env.ARCHIVE_NOW) : new Date()) - IDLE_MS;
+
 async function localItems(vault) {
   const items = [];
-  const add = async (full, base, prefix, trash) => {
+  const add = async (full, base, prefix, trash, date) => {
     const st = await fs.stat(full);
     const rel = path.relative(base, full);
-    items.push({ kind: 'local', full, trash: path.join(trash, rel), path: `${prefix}/${rel}`, date: itemDate(rel, st.mtime) });
+    items.push({ kind: 'local', full, trash: path.join(trash, rel), path: `${prefix}/${rel}`, date: date || itemDate(rel, st.mtime) });
   };
-  if (vault) for (const dir of VAULT_DIRS) {
-    for (const f of await walk(path.join(vault, dir))) await add(f, vault, `obsidian/${VAULT_KEY}`, path.join(vault, '.trash', 'Arkiv'));
+  if (vault) {
+    for (const dir of VAULT_DIRS) {
+      for (const f of await walk(path.join(vault, dir))) await add(f, vault, `obsidian/${VAULT_KEY}`, path.join(vault, '.trash', 'Arkiv'));
+    }
+    // Sessionsanteckningar: veckan då sessionen senast var aktiv, och bara om det är minst 7 dagar sedan
+    for (const f of await walk(path.join(vault, '10 Projekt'))) {
+      const rel = path.relative(vault, f);
+      if (!SESSIONS.test(rel) || !/\.md$/i.test(f)) continue;
+      const date = await lastActive(f);
+      if (date < idleBefore()) await add(f, vault, `obsidian/${VAULT_KEY}`, path.join(vault, '.trash', 'Arkiv'), date);
+    }
   }
   for (const f of await walk(path.join(ROOT, 'work'))) {
     if (TEXT_RE.test(f)) await add(f, ROOT, 'lokal', path.join(DATA, 'trash'));
@@ -91,6 +139,11 @@ async function localItems(vault) {
     if (/^\d{4}-\d{2}-\d{2}_\d{6}\.log$/.test(path.basename(f))) await add(f, ROOT, 'lokal', path.join(DATA, 'trash'));
   }
   return items;
+}
+
+// Det som rör en local-only-organisation stannar på Macen: sökvägen eller innehållet nämner den
+async function isLocalOnly(i, compliance) {
+  return compliance.matches(i.path) || compliance.matches(await fs.readFile(i.full, 'utf8').catch(() => ''));
 }
 
 // ---------- pekaranteckningar i valvet ----------
@@ -163,7 +216,15 @@ async function withLock(fn) {
 async function archive(cfg, c, vault, dryRun) {
   // ARCHIVE_NOW (t.ex. 2026-11-02) låtsas att det är en annan dag, för att provköra med --dry-run
   const cutoff = weekStart(process.env.ARCHIVE_NOW ? new Date(process.env.ARCHIVE_NOW) : new Date());
-  const items = (await localItems(vault)).filter(i => i.date < cutoff);
+  // Sessionsanteckningarna är redan filtrerade på 7 dagar; deras vecka kan vara pågående
+  const all = (await localItems(vault)).filter(i => i.date < cutoff || SESSIONS.test(i.path.split('/').slice(2).join('/')));
+  const compliance = await loadCompliance();
+  const items = [], kept = [];
+  for (const i of all) (await isLocalOnly(i, compliance) ? kept : items).push(i);
+  if (kept.length) {
+    log(`${kept.length} filer är local-only (${compliance.orgs.map(o => o.name).join(', ')}) och laddas inte upp, de lämnas kvar:`);
+    for (const i of kept) log(`  ${i.path}`);
+  }
   const weeks = Object.groupBy(items, i => isoWeek(i.date));
   if (!items.length) log('inget lokalt att arkivera');
 
@@ -205,6 +266,67 @@ async function archive(cfg, c, vault, dryRun) {
     }
   }
   if (!dryRun) await updateNotes(c, vault);
+  for (const o of compliance.orgs.filter(o => o.vault)) {
+    await archiveLocal({ name: o.name, root: o.vault, dirs: LOCAL_VAULT_DIRS }, dryRun);
+  }
+}
+
+// Lokalt arkiv utan uppladdning: sessionsanteckningar som inte har varit aktiva på 7 dagar flyttas till
+// <valv>/Arkiv/<vecka>/ med samma relativa sökväg, och <valv>/Arkiv/<vecka>.md listar dem. Inget raderas.
+export async function archiveLocal({ name, root, dirs }, dryRun) {
+  if (!await fs.access(root).then(() => true, () => false)) return log(`${name}: valvet finns inte (${root})`);
+  const items = [];
+  for (const pattern of dirs) {
+    for (const dir of await globDirs(root, pattern)) {
+      for (const full of await walk(dir)) {
+        if (!/\.md$/i.test(full)) continue;
+        const date = await lastActive(full);
+        if (date < idleBefore()) items.push({ full, rel: path.relative(root, full), date });
+      }
+    }
+  }
+  if (!items.length) return log(`${name}: inget lokalt att arkivera`);
+  for (const [week, list] of Object.entries(Object.groupBy(items, i => isoWeek(i.date))).sort()) {
+    log(`${name} ${week}: ${list.length} filer, bara lokalt${dryRun ? ' (provkörning)' : ''}`);
+    if (dryRun) { for (const i of list) log(`  ${i.rel}`); continue; }
+    for (const i of list) {
+      const dest = path.join(root, 'Arkiv', week, i.rel);
+      if (await fs.access(dest).then(() => true, () => false)) { log(`  finns redan, lämnas kvar: ${i.rel}`); continue; }
+      await fs.mkdir(path.dirname(dest), { recursive: true });
+      await fs.rename(i.full, dest);
+    }
+    await writeLocalWeekNote(root, week);
+    log(`  flyttade till Arkiv/${week}/, pekare: Arkiv/${week}.md`);
+  }
+}
+
+async function writeLocalWeekNote(root, week) {
+  const dir = path.join(root, 'Arkiv', week);
+  const files = (await walk(dir)).map(f => path.relative(dir, f)).sort();
+  const open = [];
+  for (const f of files) {
+    const todos = openTodos(f, await fs.readFile(path.join(dir, f), 'utf8'));
+    if (todos.length) open.push(`- **${f}**`, ...todos.map(t => `  - [ ] ${t}`));
+  }
+  const link = f => `[[Arkiv/${week}/${f.replace(/\.md$/i, '')}|${path.basename(f, '.md')}]]`;
+  await fs.writeFile(path.join(root, 'Arkiv', `${week}.md`), [
+    '---', 'tags: [arkiv]', `vecka: ${week}`, `filer: ${files.length}`, 'status: lokalt', '---',
+    `# Arkiv ${week}`, '',
+    `Claude-sessionernas anteckningar från veckan ${period(weekStart(new Date(isoWeekMonday(week))))}, som inte hade varit aktiva på 7 dagar.`,
+    `De ligger kvar på Macen i \`Arkiv/${week}/\` med samma sökväg som förut. Inget har laddats upp. Flytta tillbaka en fil för att återställa den.`, '',
+    ...(open.length ? ['## Öppet när veckan arkiverades', ...open, ''] : []),
+    '## Innehåll', ...Object.entries(Object.groupBy(files, f => path.dirname(f)))
+      .flatMap(([d, list]) => [`### ${d}`, ...list.map(f => `- ${link(f)}`), '']),
+  ].join('\n'));
+}
+
+// Måndagen i en ISO-vecka (ÅÅÅÅ-Vvv), som lokalt datum
+function isoWeekMonday(week) {
+  const [y, w] = week.split('-V').map(Number);
+  const jan4 = new Date(y, 0, 4);
+  const d = weekStart(jan4);
+  d.setDate(d.getDate() + (w - 1) * 7);
+  return d;
 }
 
 // Pekaranteckningar för alla veckor i molnet vars antal delar har ändrats, även veckor som bara

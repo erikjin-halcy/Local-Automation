@@ -55,6 +55,8 @@ if (window.CLOUD_MODE) {
     for (const m of b.mcp || []) {
       const s = available.find(x => x.name === m.name);
       if (!s) return `okänd MCP-server: ${m.name}`;
+      // Källor från en local-only-organisation körs bara på Macen; avstängda uppgifter får sparas
+      if (s.localOnly && b.enabled) return `${m.name} får bara användas lokalt på Macen (compliance), inte i molnet`;
       if (!s.levels.includes(m.level)) return `${m.name} saknar nivån ${m.level}`;
     }
     return null;
@@ -190,6 +192,13 @@ if (window.CLOUD_MODE) {
       });
       if (store.agent?.mode === 'cloud') await sync();
       return { ok: true };
+    }
+    // Morgonmejlet för ett datum, med räknarna från Macen (Översikten, "Aktuellt")
+    if (parts[0] === 'digest' && method === 'GET' && /^\d{4}-\d{2}-\d{2}$/.test(parts[1] || '')) {
+      const d = await F.getDoc(F.doc(db, 'digests', parts[1]));
+      if (!d.exists()) return null;
+      const { date, status, subject, markdown, counts } = d.data();
+      return { date, status, subject, markdown, counts: counts || {} };
     }
     if (parts[0] === 'digest' && method === 'POST') {
       if (store.agent?.mode !== 'cloud') throw new Error('morgonmejlet finns bara i molnläget');

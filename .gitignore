@@ -17,3 +17,9 @@ profile.md
 
 # Egna sökvägar till Obsidian-valv (kopiera sync.example.json)
 sync.json
+
+# Organisationer med compliance local-only: namn, källor och promptar stannar på Macen
+# (kopiera compliance.example.json och local/exempel/)
+compliance.json
+local/*/
+!local/exempel/

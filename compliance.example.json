@@ -1,0 +1,12 @@
+{
+  "_": "Kopiera till compliance.json (inte i git). Organisationer vars material bara får behandlas på Macen (compliance local-only). Repona hämtas från devctl (devctl repos --json: compliance och org); här står källorna utanför repona. Se cloud/compliance.mjs. Promptarna för de lokala sammanfattningarna ligger i local/<org>/morgon.md och kvall.md (se local/exempel/).",
+  "orgs": {
+    "Acme": {
+      "compliance": "local-only",
+      "mcp": ["google-work", "slack", "linear"],
+      "github": ["Acme-app"],
+      "patterns": ["acme.se", "ACME"],
+      "vault": "~/Desktop/Acme/Acme-vault"
+    }
+  }
+}

@@ -10,6 +10,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { GoogleAuth, OAuth2Client } from 'google-auth-library';
 import { sendMail } from './mail.mjs';
+import { loadCompliance } from './compliance.mjs';
 
 const PROJECT = process.env.PROJECT;
 const REGION = process.env.REGION;                   // jobbets region
@@ -143,9 +144,16 @@ async function sync() {
     .filter(j => j.name.split('/').pop().startsWith(PREFIX))
     .map(j => [j.name.split('/').pop().slice(PREFIX.length), j]));
 
+  const compliance = await loadCompliance({ devctl: false });
   for (const [name, d] of tasks) {
     const t = d.data();
     if (!NAME_RE.test(name) || !t.enabled) continue;
+    // Uppgifter med källor från en local-only-organisation schemaläggs aldrig i molnet
+    const local = compliance.localSources(t.mcp);
+    if (local.length) {
+      await db.doc(`taskState/${name}`).set({ error: `använder källor som bara får köras lokalt på Macen (${local.join(', ')})` }, { merge: true });
+      continue;
+    }
     let schedule;
     try { schedule = toCron(t.schedule); }
     catch (e) { await db.doc(`taskState/${name}`).set({ error: e.message }, { merge: true }); continue; }

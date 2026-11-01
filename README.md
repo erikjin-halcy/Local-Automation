@@ -141,7 +141,7 @@ inte listas laddas inte alls (`--strict-mcp-config`).
 | Gmail + Kalender, privat | `google` | [taylorwilsdon/google_workspace_mcp](https://github.com/taylorwilsdon/google_workspace_mcp) |
 | Gmail + Kalender, jobb | `google-work` | samma, eget konto och egen token |
 | Linear | `linear` | officiell, `mcp.linear.app` (läsläge: `/mcp/readonly`) |
-| PostHog | `posthog` | officiell, `mcp.posthog.com` (läsläge: `?readonly=true`, låst till projektet Halcy) |
+| PostHog | `posthog` | officiell, `mcp.posthog.com` (läsläge: `?readonly=true`, låst till ett projekt) |
 | Apple Notes | `notes` | filer i `/notes`, synkade från Macen |
 | Obsidian | `obsidian` | filer i `/obsidian/<valv>`, synkade från Macen |
 

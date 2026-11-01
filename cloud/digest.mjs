@@ -2,8 +2,9 @@
 //  1. hämtar de senaste rapporterna från jobben som är markerade "Ta med i morgonmejlet"
 //     (är inget jobb markerat tas alla påslagna jobb med)
 //  2. låter Claude kontrollera varje att göra-punkt mot läget nu (Linear, Slack, Gmail och
-//     kalendern, bara läsbehörighet) och skriva en kort sammanfattning överst; under den följer
-//     rapporterna i sin helhet. Punkter som redan är gjorda bockas av, även i webbappen.
+//     kalendern, bara läsbehörighet) och skriva en sammanfattning av rapporterna tillsammans; under
+//     den länkar mejlet till rapporterna i webbappen i stället för att upprepa dem. Punkter som
+//     redan är gjorda bockas av, även i webbappen.
 //  3. sparar mejlet i digests/<datum> och ber API-tjänsten skicka det (cloud/api.mjs,
 //     cloud/mail.mjs); den skickar bara till ägaren och har den enda Gmail-token som kan skicka
 
@@ -13,6 +14,7 @@ import path from 'node:path';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { cleanProfile, profileText } from './lib.mjs';
+import { loadCompliance } from './compliance.mjs';
 
 const WORK = '/work';
 const APP_URL = process.env.APP_URL || '';
@@ -57,10 +59,14 @@ const runs = await db.runTransaction(async tx => {
 });
 if (runs < 0) { console.error(`morgonmejlet har redan gjorts ${MAX_RUNS_PER_DAY} gånger i dag`); process.exit(1); }
 
+// Källor från en local-only-organisation används aldrig här: deras uppgifter och rapporter
+// kommer inte med i mejlet, och deras MCP-servrar används inte för att bocka av
+const compliance = await loadCompliance({ devctl: false });
 let log = '';
 try {
   // ---------- rapporter ----------
-  const all = (await db.collection('tasks').get()).docs.map(d => ({ id: d.id, ...d.data() }));
+  const all = (await db.collection('tasks').get()).docs.map(d => ({ id: d.id, ...d.data() }))
+    .filter(t => !compliance.localSources(t.mcp).length);
   const marked = all.filter(t => t.digest);
   const tasks = (marked.length ? marked : all.filter(t => t.enabled)).map(t => t.id).sort();
   // Jobben körs parallellt; vänta tills de som körs nu är klara (högst WAIT_MS)
@@ -97,21 +103,27 @@ try {
     const intro = profileText(profile);
     const prompt = `${intro ? `${intro}\nUppgift:\n` : ''}` +
       `I /work/rapporter/<jobb>/ ligger dagens rapporter från mina automatiska jobb (${sources.map(s => s.task).join(', ')}). ` +
-      'Skriv en kort sammanfattning i markdown som inleder mitt morgonmejl och spara den i /work/morgonmejl.md. ' +
-      'Rapporterna i sin helhet läggs automatiskt in under din sammanfattning, så upprepa inte detaljerna. Skicka ingenting själv.\n\n' +
+      'Skriv mitt morgonmejl i markdown och spara det i /work/morgonmejl.md. Skicka ingenting själv. ' +
+      'Rapporterna läggs inte in i mejlet, bara en länk till var och en, och deras punkter går att bocka av i webbappen. ' +
+      'Mejlet ska därför inte återge rapporterna eller lista om deras punkter, utan sammanfatta: dra slutsatser över alla rapporter tillsammans, ' +
+      'som en kollega som har läst allt och berättar vad som är viktigt. Flera rapporter tar upp samma saker ' +
+      '(t.ex. nämner dagsplanen, dagsrapporten och Slack-sammanfattningen samma tråd); nämn varje sak högst en gång.\n\n' +
       'Struktur (hoppa över rubriker som blir tomma):\n' +
-      '1. **Prioritera i dag** (allra först): de 1–3 viktigaste sakerna att göra i dag, numrerade, var och en med en kort motivering och källa.\n' +
-      '2. **I korthet**: 2–3 meningar om läget i övrigt.\n' +
-      '3. **Dagens schema**: möten och fokusblock med tider, om det finns i rapporterna.\n' +
-      '4. **Att göra**: en samlad checklista (`- [ ] …`) över allt som kräver åtgärd, i prioritetsordning. Slå ihop dubbletter och ange källa i slutet av varje punkt, t.ex. (Slack #dev), (jobbmejl), (Linear HAL-123).\n' +
-      '5. **Redan klart** (sist, bara om något): en kort lista över punkter från rapporterna som du såg var gjorda, med vad som visade det.\n\n' +
+      '1. **Sammanfattning** (allra först): ett kort stycke löptext, 3–5 meningar, om läget: vad som har hänt sedan i går, vad som väntar på mig och varför, ' +
+      'mönster eller sådant som har blivit liggande (t.ex. att samma sak har väntat i flera dagar), och vad dagen ser ut att handla om. ' +
+      'Gruppera mindre saker i stället för att räkna upp dem (t.ex. "tre mindre förfrågningar i #allmänt, ingen brådskande"). Inga punktlistor här.\n' +
+      '2. **Prioritera i dag**: de 1–3 saker som är viktigast att göra i dag, numrerade, var och en på en rad med en kort motivering och källa. ' +
+      'Är inget viktigt (t.ex. en helgdag utan något brådskande), skriv det i sammanfattningen och hoppa över rubriken.\n' +
+      '3. **Dagens schema**: möten och fokusblock med tider, bara om det finns några.\n' +
+      '4. **Redan klart** (sist, bara om något): en kort lista över punkter från rapporterna som du såg var gjorda, med vad som visade det.\n' +
+      'Ingen fullständig att göra-lista: den finns i rapporterna.\n\n' +
       'Kontrollera först, innan du skriver: rapporterna kan vara inaktuella. Gå igenom varje punkt i rapporternas checklistor (`- [ ]`) ' +
       'och kontrollera med verktygen om den redan är gjord. Exempel: Linear-ärendet är klart eller stängt, eller inbjudan är accepterad (jag är medlem); ' +
       'jag har svarat i Slack-tråden eller kanalen efter frågan; jag har svarat på mejlet; mötet är redan bokat. ' +
-      'Punkter som är avbockade (`- [x]`) är redan klara. Ta inte med gjorda punkter under Prioritera i dag eller Att göra. ' +
+      'Punkter som är avbockade (`- [x]`) är redan klara. Ta inte med gjorda punkter i sammanfattningen eller under Prioritera i dag. ' +
       'Är du osäker, låt punkten vara kvar. Du får bara läsa: ändra, skicka eller svara inte på något.\n' +
       'Skriv också /work/klara.json: en JSON-lista med den exakta texten efter `- [ ] ` för varje punkt i rapporterna som är gjord, t.ex. ["Acceptera Ellens Linear-inbjudan (jobbmejl)"].\n' +
-      '\nHögst cirka 250 ord. Skriv datum som ÅÅÅÅ-MM-DD (t.ex. 2026-10-30), aldrig som "29 okt". Behåll länkar. Ta bara med sådant som står i rapporterna och hitta inte på något. Ingen hälsningsfras eller signatur.';
+      '\nHögst cirka 180 ord. Skriv datum som ÅÅÅÅ-MM-DD (t.ex. 2026-10-30), aldrig som "29 okt". Behåll länkar. Ta bara med sådant som står i rapporterna och hitta inte på något. Ingen hälsningsfras eller signatur.';
     // Claude får bara läsverktygen (alla tokens är skrivskyddade); ingen token kan skicka mejl
     const mcp = await checkMcp();
     console.log(`kontrollerar med: ${mcp.map(m => path.basename(m)).join(', ') || 'inga verktyg'}`);
@@ -132,15 +144,18 @@ try {
     await markDone(sources);
   }
 
-  // Rapporterna i sin helhet, med rubrikerna två nivåer ned så att de hamnar under jobbets rubrik
-  const reports = sources.map(s => `## ${s.task}\n\n${s.content.slice(0, MAX_REPORT).replace(/^(#{1,4}) /gm, '$1## ')}`)
-    .join('\n\n---\n\n');
-  const markdown = reports ? `${summary.trim()}\n\n---\n\n# Rapporterna\n\n${reports}` : summary;
+  // Bara länkar till rapporterna: sammanfattningen tar redan med allt i dem, en gång. (Äldre mejl har
+  // rapporterna i sin helhet under "# Rapporterna", som webbappen fäller ihop.)
+  const reportLink = s => APP_URL ? `[${s.task}](${APP_URL}#/task/${encodeURIComponent(s.task)}/results)` : s.task;
+  const reports = sources.map(s => `- ${reportLink(s)} (${new Date(s.modified).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' })})`)
+    .join('\n');
+  const markdown = (reports ? `${summary.trim()}\n\n---\n\n## Rapporterna\n\n${reports}` : summary)
+    .replace(/^/, await localCounts(date));
 
   // ---------- skicka ----------
   // Fast prefix gör det lätt att filtrera mejlen till en egen etikett i Gmail
   const subject = `[Local Automation] Morgonmejl ${date} (${now.toLocaleDateString('sv-SE', { weekday: 'long' })})`;
-  const link = APP_URL ? `\n\n---\n\n[Öppna Local Automation](${APP_URL}) för att bocka av punkterna.` : '';
+  const link = APP_URL ? `\n\n[Öppna Local Automation](${APP_URL}) för att bocka av punkterna.` : '';
   await ref.set({
     status: 'ready', subject, markdown: markdown + link, sources, error: null, log: log.slice(-20_000),
     updatedAt: FieldValue.serverTimestamp(),
@@ -165,7 +180,7 @@ async function checkMcp() {
     } catch { /* kontot är inte inloggat i molnet */ }
   }
   const out = [];
-  for (const [name, vars] of CHECK_MCP) {
+  for (const [name, vars] of CHECK_MCP.filter(([n]) => !compliance.localMcp.has(n))) {
     const cfg = `/mcp/${name}.read.json`;
     if (vars.every(v => process.env[v]) && await fs.access(cfg).then(() => true, () => false)) out.push(cfg);
   }
@@ -196,6 +211,22 @@ async function markDone(sources) {
     s.content = content;
     console.log(`bockade av ${changed} punkter i ${s.task}/${s.path}`);
   }
+}
+
+// Räknarna som Macen har skrivit för local-only-organisationerna (local/counts.mjs): bara antal och en rad
+// text som koden där har byggt, aldrig innehåll. Dagens morgon, annars gårdagens kväll.
+async function localCounts(date) {
+  const y = new Date(`${date}T12:00:00`); y.setDate(y.getDate() - 1);
+  const yesterday = y.toLocaleDateString('sv-SE');
+  const [today, prev] = await Promise.all([date, yesterday].map(d => db.doc(`digests/${d}`).get().then(s => s.data()?.counts || {})));
+  const rows = [];
+  for (const org of new Set([...Object.keys(today), ...Object.keys(prev)])) {
+    const e = today[org]?.morgon || prev[org]?.kvall;
+    if (!e?.text) continue;
+    const when = today[org]?.morgon ? '' : ' (i går kväll, morgonen är inte gjord än)';
+    rows.push(`- **${org}**${when}: ${e.text}. Läs på Macen: \`${e.rapport}\``);
+  }
+  return rows.length ? `## Lokalt på Macen\n\n${rows.join('\n')}\n\n` : '';
 }
 
 // Skickas av API-tjänsten, som har Gmail-token; körningen (och Claude) har den inte

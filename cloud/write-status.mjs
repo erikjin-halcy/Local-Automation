@@ -2,6 +2,7 @@
 // vilken identitet som hittades i .env. Körs av cloud/deploy.sh på Macen.
 // Användning: TOKEN=$(gcloud auth print-access-token) node cloud/write-status.mjs <projekt>
 import { listMcp, detectIdentity } from '../ui/lib.mjs';
+import { loadCompliance } from './compliance.mjs';
 
 const project = process.argv[2];
 const value = v => {
@@ -13,11 +14,17 @@ const value = v => {
   return { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, value(x)])) } };
 };
 
-// I molnet finns alla tokens som hemligheter; Google-inloggningarna laddas upp av deploy.sh
-const mcp = (await listMcp()).map(s => ({ ...s, missing: s.missing, needsLogin: s.needsLogin }));
+// I molnet finns alla tokens som hemligheter; Google-inloggningarna laddas upp av deploy.sh.
+// Källor från en local-only-organisation finns inte i molnet: webbappen visar dem låsta (localOnly).
+const compliance = await loadCompliance();
+const mcp = (await listMcp()).map(s => ({ ...s, missing: s.missing, needsLogin: s.needsLogin, localOnly: compliance.localMcp.has(s.name) }));
+// Identiteter som hör till en local-only-organisation (jobbadressen, Slack-workspacen) skickas inte
+const id = await detectIdentity();
+const detected = { ...id, emails: (id.emails || []).filter(e => !compliance.matches(e)),
+  slack: compliance.localMcp.has('slack') ? null : id.slack };
 const status = {
   mode: 'cloud', docker: true, image: true, token: true, mcp,
-  detected: await detectIdentity(), host: 'Cloud Run (europe-north2)',
+  detected, host: 'Cloud Run (europe-north2)',
 };
 const url = `https://firestore.googleapis.com/v1/projects/${project}/databases/(default)/documents/agent/status`;
 const res = await fetch(url, {

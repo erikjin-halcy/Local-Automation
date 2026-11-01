@@ -1,5 +1,8 @@
 #!/bin/zsh
 # Kör en uppgift från tasks/ en gång i Docker. Användning: ./run.sh <uppgift>
+# TASK_FILE, WORK_DIR och LOG_DIR byter uppgiftsfil, arbetsyta och loggkatalog (används av local/run.sh,
+# så att local-only-organisationernas uppgifter och resultat ligger utanför repot och aldrig syns i
+# tasks/, work/ eller logs/). ENV_PASS: variabler från miljön som går före .env (t.ex. GITHUB_PAT).
 set -euo pipefail
 export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
 DIR="${0:A:h}"
@@ -7,7 +10,7 @@ source "$DIR/lib.sh"
 IMAGE="claude-runner"
 
 TASK="${1:?Användning: ./run.sh <uppgift>  (se tasks/)}"
-FILE="$DIR/tasks/$TASK.md"
+FILE="${TASK_FILE:-$DIR/tasks/$TASK.md}"
 [[ -f "$FILE" ]] || { echo "Hittar inte $FILE" >&2; exit 1; }
 [[ -f "$DIR/.env" ]] || { echo "Saknar $DIR/.env (kopiera .env.example)" >&2; exit 1; }
 
@@ -56,8 +59,9 @@ done
 [[ -n "$FILE_PROMPT" ]] && PROMPT="$PROMPT
 $FILE_PROMPT"
 
-WORK="$DIR/work/$TASK"
-LOG="$DIR/logs/$TASK/$(date +%Y-%m-%d_%H%M%S).log"
+WORK="${WORK_DIR:-$DIR/work/$TASK}"
+LOGS="${LOG_DIR:-$DIR/logs/$TASK}"
+LOG="$LOGS/$(date +%Y-%m-%d_%H%M%S).log"
 mkdir -p "$WORK" "${LOG:h}" "$DIR/data/slack" "$DIR/data/google" "$DIR/data/google-work"
 
 # Starta Docker Desktop om den inte är igång
@@ -73,7 +77,7 @@ if [[ "$(docker image inspect -f '{{index .Config.Labels "dockerfile"}}' "$IMAGE
 fi
 
 # Lås så att samma uppgift inte körs två gånger samtidigt
-LOCK="$DIR/logs/$TASK/.lock"
+LOCK="$LOGS/.lock"
 if ! mkdir "$LOCK" 2>/dev/null; then
   if kill -0 "$(cat "$LOCK/pid" 2>/dev/null)" 2>/dev/null; then
     echo "$TASK körs redan" >&2; exit 75
@@ -87,7 +91,8 @@ echo "=== $TASK $(date) ===" >>"$LOG"
 set +e
 # Samma tidszon som Macen, så att "idag" och klockslag stämmer
 TZ_NAME="$(readlink /etc/localtime | sed 's#.*/zoneinfo/##')"
-docker run --rm --env-file "$DIR/.env" -e MCP_TIMEOUT=60000 -e "TZ=${TZ_NAME:-UTC}" \
+PASS=(); for v in ${(s: :)${ENV_PASS:-}}; do PASS+=(-e "$v"); done
+docker run --rm --env-file "$DIR/.env" "${PASS[@]}" -e MCP_TIMEOUT=60000 -e "TZ=${TZ_NAME:-UTC}" \
   -v "$WORK:/work" \
   -v "$DIR/mcp:/mcp:ro" \
   -v "$DIR/data:/data" \

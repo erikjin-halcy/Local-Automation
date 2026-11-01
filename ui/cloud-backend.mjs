@@ -197,6 +197,8 @@ async function validate(b) {
   for (const m of b.mcp || []) {
     const s = available.find(x => x.name === m?.name);
     if (!s) return `okänd MCP-server: ${m?.name}`;
+    // Avstängda uppgifter får sparas, så att en gammal uppgift kan stängas av
+    if (s.localOnly && b.enabled) return `${m.name} får bara användas lokalt på Macen (compliance), inte i molnet`;
     if (!s.levels.includes(m.level)) return `${m.name} saknar nivån ${m.level}`;
   }
   return null;
@@ -260,6 +262,11 @@ export async function cloudApi(method, parts, url, body) {
     return { ok: true };
   }
   if (parts[0] === 'digest' && method === 'POST') return api('/digest');
+  // Morgonmejlet för ett datum, med räknarna från Macen (Översikten, "Aktuellt")
+  if (parts[0] === 'digest' && method === 'GET' && /^\d{4}-\d{2}-\d{2}$/.test(parts[1] || '')) {
+    const d = await getDoc(`digests/${parts[1]}`);
+    return d && { date: d.date, status: d.status, subject: d.subject, markdown: d.markdown, counts: d.counts || {} };
+  }
   if (parts[0] !== 'tasks') throw err(404, 'okänd adress');
 
   if (parts.length === 1) {

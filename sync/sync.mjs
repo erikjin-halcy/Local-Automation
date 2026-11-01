@@ -19,6 +19,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { loadCompliance } from '../cloud/compliance.mjs';
 
 const exec = promisify(execFile);
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -28,6 +29,8 @@ const BINARY = 'png|jpe?g|gif|webp|heic|svg|pdf|mp4|mov|mp3|m4a|wav|zip';
 // Dolda filer (.obsidian, .trash …) och binärfiler synkas inte. GCS_EXCLUDE är samma regel för gcloud (Python-regex).
 const SKIP_RE = new RegExp(`(^|/)\\.|\\.(${BINARY})$`, 'i');
 const GCS_EXCLUDE = `(?i)(^|.*/)\\..*|.*\\.(${BINARY})$`;
+// Material från organisationer med compliance local-only (se cloud/compliance.mjs) lämnar aldrig
+// Macen: filer vars sökväg eller innehåll nämner dem laddas inte upp, och gamla kopior tas bort ur molnet
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 const md5 = buf => crypto.createHash('md5').update(buf).digest('hex');
 
@@ -124,6 +127,16 @@ async function walk(dir, out = []) {
   return out;
 }
 
+async function localOnlyFiles(dir, compliance) {
+  const out = [];
+  for (const full of await walk(dir)) {
+    const rel = path.relative(dir, full);
+    if (SKIP_RE.test(rel)) continue;
+    if (compliance.matches(rel) || compliance.matches(await fs.readFile(full, 'utf8').catch(() => ''))) out.push(rel);
+  }
+  return out;
+}
+
 // ---------- molnet ----------
 
 function gcloudFor(cfg) {
@@ -196,6 +209,7 @@ function planNote(c, current, currentPaths, ref) {
 async function sync() {
   const cfg = await loadConfig();
   const gcloud = gcloudFor(cfg);
+  const compliance = await loadCompliance();
   const lock = path.join(DATA, '.sync.lock');
   await fs.mkdir(DATA, { recursive: true });
   try { await fs.mkdir(lock); } catch {
@@ -235,17 +249,32 @@ async function sync() {
     }
 
     // 2. ladda upp kopian
-    const rsync = (src, dst, extra = []) => gcloud('storage', 'rsync', src, dst, '--recursive',
-      '--delete-unmatched-destination-objects', ...extra);
+    // Filer som rör en local-only-organisation hoppas över. rsync tar inte bort undantagna filer i molnet,
+    // så kopior från tidigare synkar tas bort efteråt.
+    const upload = async (src, dst, base = null) => {
+      const local = await localOnlyFiles(src, compliance);
+      const esc = f => f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const only = local.length ? `^(?:${local.map(esc).join('|')})$` : null;
+      // En enda (?i) i början: Python tillåter inte flaggor mitt i uttrycket
+      const exclude = [base?.slice(4), only].filter(Boolean);
+      await gcloud('storage', 'rsync', src, dst, '--recursive', '--delete-unmatched-destination-objects',
+        ...(exclude.length ? ['--exclude', `(?i)${exclude.map(e => `(?:${e})`).join('|')}`] : []));
+      for (const f of local) await gcloud('storage', 'rm', `${dst}/${f}`).catch(() => {});
+      return local.length;
+    };
     if (cfg.notes) {
       if (!notes.length && (await walk(STAGE)).length) throw new Error('Notes-exporten blev tom; laddar inte upp (skulle radera kopian i molnet)');
       await writeNotesDir(STAGE, notes);
-      await rsync(STAGE, `gs://${cfg.bucket}/snapshot/notes`);
+      const kept = await upload(STAGE, `gs://${cfg.bucket}/snapshot/notes`);
+      if (kept) log(`Notes: ${kept} local-only-anteckningar hölls kvar på Macen`);
     }
     for (const [name, dir] of Object.entries(cfg.vaults)) {
       try { await fs.access(dir); } catch { log(`valvet ${name} finns inte: ${dir}`); continue; }
-      await rsync(dir, `gs://${cfg.bucket}/snapshot/obsidian/${name}`, ['--exclude', GCS_EXCLUDE]);
-      log(`Obsidian: ${name} uppladdat`);
+      if (compliance.matches(name) || compliance.matches(dir) || compliance.orgs.some(o => o.vault === dir)) {
+        log(`valvet ${name} är local-only och laddas inte upp`); continue;
+      }
+      const kept = await upload(dir, `gs://${cfg.bucket}/snapshot/obsidian/${name}`, GCS_EXCLUDE);
+      log(`Obsidian: ${name} uppladdat${kept ? `, ${kept} local-only-filer hölls kvar på Macen` : ''}`);
     }
     const meta = path.join(DATA, 'sync-meta.json');
     await fs.writeFile(meta, JSON.stringify({

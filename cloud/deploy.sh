@@ -67,17 +67,27 @@ put_secret() {  # put_secret <namn> <fil> [servicekonto som får läsa, la-runne
   "${G[@]}" secrets add-iam-policy-binding "$1" --member "serviceAccount:$(sa "${3:-la-runner}")" --role roles/secretmanager.secretAccessor >/dev/null
 }
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT; chmod 700 "$TMP"
+# Källor från en local-only-organisation (compliance.json, t.ex. en arbetsgivares Slack, Linear och jobbmejl) får
+# aldrig sina tokens i molnet; de körs bara på Macen (local/)
+[[ -f compliance.json ]] || { echo "compliance.json saknas: kopiera compliance.example.json, annars körs local-only-källor i molnet" >&2; exit 1; }
+LOCAL_MCP=(${(f)"$(node cloud/compliance.mjs mcp)"})
+local_only() { (( ${LOCAL_MCP[(Ie)$1]} )); }
+typeset -A VAR_MCP=(SLACK_XOXP slack LINEAR_API_KEY linear POSTHOG_API_KEY posthog GITHUB_PAT github)
 SECRETS=()
+# --set-secrets tar inte bort monteringar som redan finns i jobbet, så local-only-källor tas bort uttryckligen
+REMOVE=()
 for pair in CLAUDE_CODE_OAUTH_TOKEN:la-claude-token SLACK_XOXP:la-slack GITHUB_PAT:la-github \
             GOOGLE_OAUTH_CLIENT_ID:la-google-client-id GOOGLE_OAUTH_CLIENT_SECRET:la-google-client-secret \
             LINEAR_API_KEY:la-linear POSTHOG_API_KEY:la-posthog; do
   var="${pair%%:*}"; name="${pair##*:}"; val="$(env_get "$var")"
+  if [[ -n "${VAR_MCP[$var]:-}" ]] && local_only "${VAR_MCP[$var]}"; then echo "  hoppar över $var (local-only)"; REMOVE+=("$var"); continue; fi
   [[ -n "$val" ]] || { echo "  hoppar över $var (tom i .env)"; continue; }
   printf '%s' "$val" > "$TMP/v"; put_secret "$name" "$TMP/v"
   SECRETS+=("${var}=${name}:latest")
 done
 for pair in google:GOOGLE_EMAIL google-work:GOOGLE_WORK_EMAIL; do
   dir="${pair%%:*}"; email="$(env_get "${pair##*:}")"
+  local_only "$dir" && { echo "  hoppar över $dir (local-only)"; REMOVE+=("/secrets/$dir/creds.json"); continue; }
   f="data/$dir/$email.json"
   [[ -n "$email" && -f "$f" ]] || { echo "  hoppar över $dir (ingen inloggning)"; continue; }
   put_secret "la-$dir-creds" "$f"
@@ -101,10 +111,13 @@ API_ARGS=()
 SELF_URL="https://$SERVICE-$("${G[@]}" projects describe "$P" --format 'value(projectNumber)').$REGION.run.app"
 
 echo "▶ Cloud Run Job ($JOB)"
+if (( ${#REMOVE} )) && "${G[@]}" run jobs describe "$JOB" --region "$REGION" >/dev/null 2>&1; then
+  "${G[@]}" run jobs update "$JOB" --region "$REGION" --remove-secrets "${(j:,:)REMOVE}" >/dev/null 2>&1 || true
+fi
 "${G[@]}" run jobs deploy "$JOB" --region "$REGION" --image "$IMAGE" \
   --service-account "$(sa la-runner)" --tasks 1 --max-retries 0 --task-timeout 1800s \
   --cpu 1 --memory 2Gi \
-  --set-env-vars "GOOGLE_EMAIL=$(env_get GOOGLE_EMAIL),GOOGLE_WORK_EMAIL=$(env_get GOOGLE_WORK_EMAIL),NOTES_BUCKET=$NOTES_BUCKET,APP_URL=https://$P.web.app,API_URL=$SELF_URL" \
+  --set-env-vars "GOOGLE_EMAIL=$(env_get GOOGLE_EMAIL),GOOGLE_WORK_EMAIL=$(local_only google-work || env_get GOOGLE_WORK_EMAIL),NOTES_BUCKET=$NOTES_BUCKET,APP_URL=https://$P.web.app,API_URL=$SELF_URL" \
   --set-secrets "${(j:,:)SECRETS}" >/dev/null
 for a in la-api la-scheduler; do
   "${G[@]}" run jobs add-iam-policy-binding "$JOB" --region "$REGION" \

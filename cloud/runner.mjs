@@ -14,6 +14,7 @@ import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { Storage } from '@google-cloud/storage';
 import { cleanProfile, profileText } from './lib.mjs';
+import { loadCompliance } from './compliance.mjs';
 
 const TASK = process.env.TASK || '';
 const WORK = '/work';
@@ -40,6 +41,14 @@ const b64url = s => Buffer.from(s).toString('base64url');
 const taskSnap = await db.doc(`tasks/${TASK}`).get();
 if (!taskSnap.exists) { console.error(`uppgiften ${TASK} finns inte`); process.exit(2); }
 const task = taskSnap.data();
+// Källor från en local-only-organisation (t.ex. en arbetsgivares Slack, Linear och jobbmejl) körs aldrig i molnet
+const local = (await loadCompliance({ devctl: false })).localSources(task.mcp);
+if (local.length) {
+  const error = `använder källor som bara får köras lokalt på Macen (${local.join(', ')})`;
+  console.error(`${TASK} ${error}`);
+  await db.doc(`taskState/${TASK}`).set({ error, running: false }, { merge: true });
+  process.exit(2);
+}
 const profile = cleanProfile((await db.doc('profile/me').get()).data() || {});
 
 // Tid och körnings-id i användarens tidszon, samma format som lokalt (ÅÅÅÅ-MM-DD_HHMMSS)
