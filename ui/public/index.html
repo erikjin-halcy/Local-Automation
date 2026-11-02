@@ -743,12 +743,13 @@ function renderNav() {
 }
 
 // ---------- routing ----------
-// #/  ·  #/new  ·  #/profile  ·  #/task/<namn>/<results|runs|settings>
+// #/  ·  #/new  ·  #/profile  ·  #/task/<namn>/<results|runs|settings>  ·  #/lokalt/<org>/<datum>/<morgon|kvall>
 
 function parseRoute() {
   const p = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
   if (p[0] === 'new') return { view: 'new' };
   if (p[0] === 'profile') return { view: 'profile' };
+  if (p[0] === 'lokalt' && p.length === 4) return { view: 'local', org: p[1], date: p[2], kind: p[3] };
   if (p[0] === 'task' && p[1]) return { view: 'task', name: p[1], tab: TABS.some(x => x[0] === p[2]) ? p[2] : 'results' };
   return { view: 'overview' };
 }
@@ -771,8 +772,31 @@ function render() {
   if (route.view === 'profile') return renderProfile();
   if (route.view === 'new') return renderSettings(document.getElementById('main'), null);
   if (route.view === 'task') return renderTask();
+  if (route.view === 'local') return renderLocal();
   renderOverview();
   Promise.all([loadPlan(), loadNow()]).then(() => { if (route.view === 'overview') renderOverview(true); });
+}
+
+// ---------- lokal sammanfattning ----------
+// Morgonmejlet länkar hit för local-only-organisationerna. Rapporten läses ur valvet av servern på Macen
+// (/api/local/…) och går inte att öppna i molnappen.
+
+async function renderLocal() {
+  const { org, date, kind } = route;
+  const main = document.getElementById('main');
+  const title = `🔒 ${org} · ${kind === 'kvall' ? 'kväll' : 'morgon'} ${date}`;
+  const page = body => main.replaceChildren(el('div', { class: 'page' },
+    el('div', { class: 'crumbs' }, el('a', { href: '#/' }, 'Översikt'), el('span', { 'aria-hidden': 'true' }, '/'), el('span', {}, title)),
+    el('section', { class: 'card' }, body)));
+  if (window.cloudCall) return page(el('p', { class: 'muted' },
+    `${org} får bara läsas på Macen (compliance). Öppna länken i morgonmejlet på Macen.`));
+  page(el('p', { class: 'muted' }, 'Hämtar …'));
+  try {
+    const text = await call('GET', `/local/${enc(org)}/${enc(date)}/${enc(kind)}`);
+    if (route.view === 'local') page(el('div', { class: 'md', html: md(text) }));
+  } catch (e) {
+    if (route.view === 'local') page(el('p', { class: 'muted' }, `Rapporten finns inte än: körningen görs när Macen är vaken (${e.message}).`));
+  }
 }
 
 // ---------- översikt ----------

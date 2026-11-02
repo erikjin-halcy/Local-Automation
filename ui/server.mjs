@@ -18,6 +18,17 @@ import {
 // Laddas bara i molnläget (kräver .firebaserc och gcloud)
 const cloud = () => import('./cloud-backend.mjs');
 
+// Sammanfattningarna för local-only-organisationerna (local/run.sh) läses direkt ur valvet och visas bara
+// här på Macen (servern lyssnar bara på 127.0.0.1); morgonmejlet länkar hit i stället för att innehålla dem
+const LOCAL_TITLE = { morgon: 'morgon', kvall: 'kväll' };
+async function localReport(org, date, kind) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !LOCAL_TITLE[kind]) return null;
+  const { loadCompliance } = await import('../cloud/compliance.mjs');
+  const vault = (await loadCompliance()).orgs.find(o => o.name === org)?.vault;
+  if (!vault) return null;
+  return fs.readFile(path.join(vault, 'Sammanfattningar', `${date} ${LOCAL_TITLE[kind]}.md`), 'utf8').catch(() => null);
+}
+
 const PUBLIC = path.join(ROOT, 'ui', 'public');
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.PORT || 4777);
@@ -175,6 +186,10 @@ http.createServer(async (req, res) => {
 
     const url = new URL(req.url, `http://${req.headers.host}`);
     const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+    if (parts[0] === 'api' && parts[1] === 'local' && req.method === 'GET' && parts.length === 5) {
+      const text = await localReport(parts[2], parts[3], parts[4]);
+      return text == null ? fail(res, 404, 'rapporten finns inte (än)') : send(res, 200, text, 'text/plain; charset=utf-8');
+    }
     if (parts[0] === 'api' && await cloudManaged()) {
       // Molnläget: uppgifterna finns i Firestore, se cloud-backend.mjs
       const body = ['POST', 'PUT', 'PATCH'].includes(req.method) ? await readJson(req) : {};

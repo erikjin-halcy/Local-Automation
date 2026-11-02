@@ -24,6 +24,8 @@ const MAX_REPORT = 60_000;
 const MAX_RUNS_PER_DAY = 5;
 const WAIT_MS = 20 * 60_000;     // så länge mejlet väntar på jobb som fortfarande körs
 const DATA = '/data';
+// Den lokala appen på Macen (ui/server.mjs); länkarna till local-only-sammanfattningarna går dit
+const LOCAL_UI = 'http://localhost:4777';
 // "- [ ] text" eller "1. [x] text": prefix, bock, avslut, text (samma som i ui/server.mjs)
 const TODO_RE = /^(\s*(?:[-*+]|\d+[.)])\s+\[)([ xX])(\]\s+)(.*)$/;
 // Läsverktyg för att kontrollera vad som redan är gjort, och variablerna de behöver
@@ -214,18 +216,20 @@ async function markDone(sources) {
 }
 
 // Räknarna som Macen har skrivit för local-only-organisationerna (local/counts.mjs): bara antal och en rad
-// text som koden där har byggt, aldrig innehåll. Dagens morgon, annars gårdagens kväll.
+// text som koden där har byggt, aldrig innehåll. Dagens morgon, annars gårdagens kväll. Själva
+// sammanfattningen finns bara på Macen; länken öppnar den i den lokala appen (ui/server.mjs, bara
+// 127.0.0.1) och innehåller bara organisationens namn och datumet.
 async function localCounts(date) {
   const y = new Date(`${date}T12:00:00`); y.setDate(y.getDate() - 1);
   const yesterday = y.toLocaleDateString('sv-SE');
   const [today, prev] = await Promise.all([date, yesterday].map(d => db.doc(`digests/${d}`).get().then(s => s.data()?.counts || {})));
-  const rows = [];
-  for (const org of new Set([...Object.keys(today), ...Object.keys(prev)])) {
+  const orgs = new Set([...compliance.orgs.filter(o => o.vault).map(o => o.name), ...Object.keys(today), ...Object.keys(prev)]);
+  const rows = [...orgs].sort().map(org => {
     const e = today[org]?.morgon || prev[org]?.kvall;
-    if (!e?.text) continue;
-    const when = today[org]?.morgon ? '' : ' (i går kväll, morgonen är inte gjord än)';
-    rows.push(`- **${org}**${when}: ${e.text}. Läs på Macen: \`${e.rapport}\``);
-  }
+    const counts = !e?.text ? 'morgonen är inte gjord än'
+      : today[org]?.morgon ? e.text : `${e.text} (i går kväll, morgonen är inte gjord än)`;
+    return `- 🔒 **${org}**: ${counts}. [Läs sammanfattningen på Macen](${LOCAL_UI}/#/lokalt/${encodeURIComponent(org)}/${date}/morgon)`;
+  });
   return rows.length ? `## Lokalt på Macen\n\n${rows.join('\n')}\n\n` : '';
 }
 
